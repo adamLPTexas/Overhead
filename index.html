@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.5">
+<meta name="version" content="2.6">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -154,10 +154,14 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .prog .pl{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-top:5px;font-variant-numeric:tabular-nums}
 
 /* emergency */
-.emer-banner{display:inline-block;font-family:var(--led);font-size:clamp(22px,6vw,30px);letter-spacing:.06em;color:#fff;background:var(--red);border-radius:6px;padding:2px 10px;margin-bottom:8px;text-shadow:none;line-height:1.1}
-.wall.emer{border-color:var(--red);box-shadow:inset 0 0 50px rgba(255,60,40,.35),0 0 0 2px var(--red)}
-.row.emer{background:rgba(255,122,107,.2)}
-.row.emer .cs{color:var(--red)}
+/* emergency colour by type: general/other = red, radio failure (7600) = orange, hijack (7500) = purple */
+.emer{--ec:var(--red)}
+.ek-nordo{--ec:#ff9f43}
+.ek-hijack{--ec:#c77dff}
+.emer-banner{display:inline-block;font-family:var(--led);font-size:clamp(22px,6vw,30px);letter-spacing:.06em;color:#fff;background:var(--ec,var(--red));border-radius:6px;padding:2px 10px;margin-bottom:8px;text-shadow:none;line-height:1.1}
+.wall.emer{border-color:var(--ec);box-shadow:inset 0 0 50px color-mix(in srgb,var(--ec) 35%,transparent),0 0 0 2px var(--ec)}
+.row.emer{background:color-mix(in srgb,var(--ec) 22%,transparent)}
+.row.emer .cs{color:var(--ec)}
 /* medical: same highlight treatment as emergencies, in green and steady (no flashing) */
 .med-banner{display:inline-block;font-family:var(--led);font-size:clamp(22px,6vw,30px);letter-spacing:.06em;color:#06210c;background:var(--green);border-radius:6px;padding:2px 10px;margin-bottom:8px;text-shadow:none;line-height:1.1}
 .wall.med{border-color:var(--green);box-shadow:inset 0 0 50px rgba(80,220,120,.25),0 0 0 2px var(--green)}
@@ -177,9 +181,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   .wall.emer,.wall.emer.flash{animation:emerWall 1s ease-in-out infinite}
   .row.emer{animation:emerRow 1s ease-in-out infinite}
   .emer-banner{animation:emerBanner 1s steps(1) infinite}
-  @keyframes emerWall{50%{box-shadow:inset 0 0 80px rgba(255,60,40,.7),0 0 22px 3px var(--red)}}
-  @keyframes emerRow{50%{background:rgba(255,122,107,.45)}}
-  @keyframes emerBanner{50%{background:#7a1d14}}
+  @keyframes emerWall{50%{box-shadow:inset 0 0 80px color-mix(in srgb,var(--ec) 70%,transparent),0 0 22px 3px var(--ec)}}
+  @keyframes emerRow{50%{background:color-mix(in srgb,var(--ec) 45%,transparent)}}
+  @keyframes emerBanner{50%{background:color-mix(in srgb,var(--ec) 45%,#000)}}
 }
 </style>
 </head>
@@ -198,11 +202,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   </section>
 
   <div class="listhead"><span id="countLabel">In range</span><span id="rangeLabel"></span></div>
-  <div class="filters">
+  <div class="filters" id="filtersRow">
     <label for="flightFilter">Flights<select id="flightFilter"></select></label>
     <label for="distFilter">Distance<select id="distFilter"></select></label>
   </div>
-  <p class="hint">Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky.</p>
+  <p class="hint" id="listHint">Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky.</p>
   <div class="list" id="list"></div>
 
   <!-- Data sources: live ADS-B positions from adsb.lol (https://adsb.lol).
@@ -386,7 +390,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function dstStr(nm) {
     if (nm == null) return { v: "—", u: "" };
     const v = cfg.units === "metric" ? nm * 1.852 : cfg.units === "aviation" ? nm : nm * 1.15078;
-    return { v: v < 10 ? v.toFixed(1) : fmt(v), u: cfg.units === "metric" ? "km" : cfg.units === "aviation" ? "nm" : "mi" };
+    return { v: v < 10 ? v.toFixed(1) : v >= 10000 ? Math.round(v / 1000) + "k" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : fmt(v), u: cfg.units === "metric" ? "km" : cfg.units === "aviation" ? "nm" : "mi" };
   }
   // The radius setting is in the units you've chosen (mi, nm or km); data sources work in nm.
   const nmToUnits = () => (cfg.units === "metric" ? 1.852 : cfg.units === "aviation" ? 1 : 1.15078);
@@ -410,6 +414,21 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       return await r.json();
     } finally { clearTimeout(t); }
   }
+  // ---- Squawk watch (link flag) ----------------------------------------------------------
+  // ?squawk=1  normal display, plus every aircraft worldwide squawking 7700 / 7600 / 7500
+  // ?squawk=2  only those emergency aircraft, worldwide; nothing else is listed
+  // adsb.lol's squawk lookup has no range: it returns every matching aircraft its receiver
+  // network can see. Emergencies found this way ignore your radius, so they can be far away.
+  const SQUAWK_MODE = (() => {
+    try { const v = new URLSearchParams(location.search).get("squawk"); return v === "1" ? 1 : v === "2" ? 2 : 0; } catch (e) { return 0; }
+  })();
+  const EMERGENCY_CODES = ["7700", "7600", "7500"];
+  async function fetchSquawks() {
+    const base = location.protocol.startsWith("http") ? "/adsblol" : "https://api.adsb.lol";
+    const lists = await Promise.all(EMERGENCY_CODES.map((c) => fetchJson(`${base}/v2/sqk/${c}`).then((j) => j.ac || [])));
+    return lists.flat();
+  }
+
   async function fetchPlanes() {
     const { lat, lon } = here;
     const r = Math.min(250, Math.ceil(radiusNm()));
@@ -510,6 +529,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   // routine status, so it is deliberately not treated as an emergency.
   const EMERGENCY_SQUAWKS = { "7700": "EMERGENCY", "7600": "RADIO FAILURE", "7500": "HIJACK" };
   const EMERGENCY_TYPES = { general: "EMERGENCY", minfuel: "MINIMUM FUEL", nordo: "RADIO FAILURE", unlawful: "HIJACK", downed: "AIRCRAFT DOWN", reserved: "EMERGENCY" };
+  // which badge colour an emergency gets: radio failure and hijack each have their own
+  function emergencyKind(a) {
+    if (a.squawk === "7600" || a.emergency === "nordo") return "nordo";
+    if (a.squawk === "7500" || a.emergency === "unlawful") return "hijack";
+    return "general";
+  }
   function emergencyOf(a) {
     if (a.squawk && EMERGENCY_SQUAWKS[a.squawk]) return `${EMERGENCY_SQUAWKS[a.squawk]} · ${a.squawk}`;
     if (a.emergency && EMERGENCY_TYPES[a.emergency]) return EMERGENCY_TYPES[a.emergency];
@@ -551,15 +576,20 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
           navAlt: a.nav_altitude_mcp ?? a.nav_altitude_fms ?? null, // autopilot target altitude
           navHdg: a.nav_heading ?? null,                             // autopilot target heading
           emer: emergencyOf(a),
+          emerKind: emergencyKind(a),
           medical: isMedical(a),
           lat: a.lat, lon: a.lon,
           dist: d,
           brg: bearing(here, pos),
         };
       })
-      .filter((p) => p.dist <= radiusNm()) // nothing past your radius
-      .filter((p) => cfg.ground === "show" || p.alt !== "ground")
-      .filter((p) => p.alt === "ground" || p.alt == null || p.alt <= cfg.maxAlt)
+      // nothing past your radius, except emergencies found by the squawk watch
+      .filter((p) => p.dist <= radiusNm() || (SQUAWK_MODE && p.emer))
+      // emergencies are always shown, even on the ground or above your max altitude
+      .filter((p) => p.emer || cfg.ground === "show" || p.alt !== "ground")
+      .filter((p) => p.emer || p.alt === "ground" || p.alt == null || p.alt <= cfg.maxAlt)
+      // the same aircraft can arrive from both the local and the squawk lookups
+      .filter((p, i, arr) => arr.findIndex((q) => q.hex === p.hex) === i)
       .sort((a, b) => priority(a) - priority(b) || a.dist - b.dist); // emergencies, then medical, then nearest
   }
 
@@ -612,9 +642,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function renderWall(p) {
     const wall = $("wall");
     if (!p) {
-      wall.classList.remove("emer", "med");
+      wall.classList.remove("emer", "med", "ek-general", "ek-nordo", "ek-hijack");
       wall.innerHTML = hiddenCount
         ? `<div class="led empty">ALL FILTERED<small>${hiddenCount} plane${hiddenCount === 1 ? " is" : "s are"} in range but hidden by your filters. Change the Flights or Distance filter, or "Planes without a route" in Settings.</small></div>`
+        : SQUAWK_MODE === 2
+        ? `<div class="led empty">NO EMERGENCIES<small>No aircraft anywhere are squawking 7700, 7600 or 7500 right now.</small></div>`
         : `<div class="led empty">CLEAR SKIES<small>No aircraft within ${radiusLabel()} right now. Try a bigger radius in Settings.</small></div>`;
       return;
     }
@@ -632,6 +664,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     const prog = cfg.showProgress !== false ? progressOf(p, rc) : null;
     const names = cfg.airportNames === "names";
     wall.classList.toggle("emer", Boolean(p.emer));
+    wall.classList.remove("ek-general", "ek-nordo", "ek-hijack");
+    if (p.emer) wall.classList.add("ek-" + p.emerKind);
     wall.classList.toggle("med", Boolean(!p.emer && p.medical && showMed()));
     wall.innerHTML = `
       ${p.emer ? `<div class="emer-banner">⚠ ${esc(p.emer)}</div>` : p.medical && showMed() ? `<div class="med-banner">✚ MEDICAL FLIGHT</div>` : ""}
@@ -659,8 +693,13 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   function renderList(planes, selHex) {
     const list = $("list");
-    $("countLabel").textContent = hiddenCount ? `${planes.length} of ${planes.length + hiddenCount} shown` : `${planes.length} in range`;
-    $("rangeLabel").textContent = `${radiusLabel()} radius`;
+    if (SQUAWK_MODE === 2) {
+      $("countLabel").textContent = `${planes.length} emergenc${planes.length === 1 ? "y" : "ies"}`;
+      $("rangeLabel").textContent = "Worldwide";
+    } else {
+      $("countLabel").textContent = hiddenCount ? `${planes.length} of ${planes.length + hiddenCount} shown` : `${planes.length} in range`;
+      $("rangeLabel").textContent = `${radiusLabel()} radius`;
+    }
     if (!planes.length) { list.innerHTML = ""; list.hidden = true; return; }
     list.hidden = false;
     list.innerHTML = headerHtml() + sortPlanes(planes).map((p) => {
@@ -670,7 +709,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const orig = route ? route[0] : null;
       const subLine = [airlineFor(p.callsign, p.reg), p.type, cfg.showClass !== false && CLASSES[p.category]].filter(Boolean).join(" · ");
       const a = altStr(p.alt), d = dstStr(p.dist);
-      return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer" : p.medical && showMed() ? " med" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
+      return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer ek-" + p.emerKind : p.medical && showMed() ? " med" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
         <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${p.medical && showMed() ? `<span class="med">Medical</span> · ` : ""}${esc(subLine)}</div></div>
         <div class="orig${orig ? "" : " na"}">${orig ? esc(orig) : "—"}</div>
         <div class="dest${dest ? "" : " na"}">${dest ? esc(dest) : (rc && rc.pending ? "…" : "—")}</div>
@@ -779,6 +818,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     // Emergencies are never hidden. Medical flights are never hidden by the filters either,
     // but turning off "Medical flight" in Settings removes them completely (not counted).
     // An emergency that is also a medical flight is still always shown.
+    if (SQUAWK_MODE === 2) { hiddenCount = 0; return lastPlanes.filter((p) => p.emer); } // emergencies only
     const pool = lastPlanes.filter((p) => p.emer || !p.medical || showMed());
     const v = pool.filter((p) => p.emer || (p.medical && showMed()) || (routeOk(p) && flightOk(p) && distOk(p)));
     hiddenCount = pool.length - v.length;
@@ -964,7 +1004,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       lines.push(`<div><span class="k">Closest pass</span>Not moving fast enough to predict.</div>`);
     }
     let vis;
-    if (p.alt === "ground") vis = "On the ground, so you'd need a clear view of the airport.";
+    if (s.ground > 60) vis = "Too far away to see from here.";
+    else if (p.alt === "ground") vis = "On the ground, so you'd need a clear view of the airport.";
     else if (up < 5) vis = "Very low on the horizon. Trees or buildings will probably hide it.";
     else if (up < 15) vis = "Low in the sky. You'll need a clear view toward the horizon.";
     else if (up >= 60) vis = "Nearly straight overhead. Look up!";
@@ -1024,9 +1065,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     const d = radiusNm() * rnd(fracMin, fracMax), b = toRad(rnd(0, 360));
     return { lat: here.lat + (d * Math.cos(b)) / 60, lon: here.lon + (d * Math.sin(b)) / (60 * Math.cos(toRad(here.lat))) };
   }
-  function fakeAircraft() {
-    // emergency: an airliner squawking 7700 / 7600 / 7500 with the matching emergency type
-    const em = pick([["7700", "general"], ["7700", "general"], ["7600", "nordo"], ["7500", "unlawful"]]);
+  // an airliner squawking an emergency code, with the matching emergency type
+  function fakeEmergency(em) {
     const airline = pick(["AAL", "SWA", "UAL", "DAL", "ENY", "SKW", "FFT", "NKS", "JBU", "ASA"]);
     const jet = pick([["A321", "A3"], ["A320", "A3"], ["B738", "A3"], ["B38M", "A3"], ["E175", "A3"], ["CRJ9", "A2"], ["A21N", "A3"]]);
     const alt = Math.round(rnd(6000, 24000) / 100) * 100;
@@ -1042,6 +1082,14 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       nav_altitude_mcp: Math.round(rnd(3000, 10000) / 1000) * 1000,
       squawk: em[0], emergency: em[1],
     };
+    return emergency;
+  }
+  function fakeAircraft() {
+    // with ?squawk on, one test plane per emergency code (emergency, radio failure, hijack);
+    // otherwise one random emergency, mostly 7700
+    const emergencies = SQUAWK_MODE
+      ? [["7700", "general"], ["7600", "nordo"], ["7500", "unlawful"]].map(fakeEmergency)
+      : [fakeEmergency(pick([["7700", "general"], ["7700", "general"], ["7600", "nordo"], ["7500", "unlawful"]]))];
     // medical: an air ambulance helicopter flying low with "lifeguard" status
     const heli = pick(["EC35", "B407", "AS50", "A109", "EC45", "B429"]);
     const medAlt = Math.round(rnd(800, 2500) / 25) * 25;
@@ -1055,7 +1103,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       baro_rate: Math.round(rnd(-300, 300) / 64) * 64,
       squawk: String(Math.floor(rnd(1000, 6999))).replace(/[89]/g, "1"), emergency: "lifeguard",
     };
-    return [emergency, medical];
+    return emergencies.concat(medical);
   }
 
   // ---- loop ----
@@ -1064,12 +1112,21 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (!here || busy) return;
     busy = true;
     try {
-      const { name, ac } = await fetchPlanes();
+      let name = "adsb.lol", ac = [];
+      if (SQUAWK_MODE === 2) {
+        ac = await fetchSquawks();                       // emergencies only, worldwide
+      } else {
+        ({ name, ac } = await fetchPlanes());
+        if (SQUAWK_MODE === 1) {
+          try { ac = ac.concat(await fetchSquawks()); } catch (e) { logError("adsb.lol squawk", e); }
+        }
+      }
       lastPlanes = normalize(DEBUG_FAKES ? ac.concat(fakeAircraft()) : ac);
       dataTime = Date.now();
       render();
       const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
-      setStatus(`Live · ${name} · ${t} · ${refreshLabel()}${DEBUG_FAKES ? " · test planes on" : ""}`, "live");
+      const modeNote = SQUAWK_MODE === 1 ? " · squawk watch" : SQUAWK_MODE === 2 ? " · emergencies only" : "";
+      setStatus(`Live · ${name} · ${t} · ${refreshLabel()}${modeNote}${DEBUG_FAKES ? " · test planes on" : ""}`, "live");
       // log emergency/medical sightings once their route lookup has had a chance to finish
       fetchRoutes(lastPlanes).then(() => { render(); logSightings(); });
       fetchModels(visiblePlanes()).then(render);
@@ -1180,6 +1237,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   // show the version from <meta name="version"> so you can confirm which build is live
   try { $("ver").textContent = "v" + document.querySelector('meta[name="version"]').content; } catch (e) {}
+
+  if (SQUAWK_MODE === 2) { $("filtersRow").hidden = true; $("listHint").hidden = true; }
 
   // ---- boot ----
   keepAwake();
