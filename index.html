@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.2">
+<meta name="version" content="2.3">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -437,7 +437,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   }
   async function fetchModels(planes) {
     if (cfg.showModel === false) return;
-    const need = planes.filter((p) => p.hex && !modelCache.has(p.hex)).slice(0, 10);
+    const need = planes.filter((p) => p.hex && !p.hex.startsWith("~") && !modelCache.has(p.hex)).slice(0, 10); // "~" = no real transponder code
     if (!need.length) return;
     need.forEach((p) => modelCache.set(p.hex, { pending: true }));
     await Promise.all(need.map(async (p) => {
@@ -876,6 +876,54 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 10) cancelPress();
   });
 
+  // ---- Debug: fake emergency + medical flights ------------------------------------------
+  // Add ?debug to the address (e.g. https://…/?debug or …/?refresh=10&debug) to mix two
+  // made-up aircraft into the real data on every refresh: one emergency and one medical
+  // flight, so the red emergency display and the MEDICAL badge can be checked any time.
+  // Values are random on each refresh (nothing is tracked between refreshes). Their
+  // transponder codes start with "~" (as real feeds do for non-ICAO addresses), so no
+  // aircraft-database lookups are made for them. Without the flag, none of this runs.
+  const DEBUG_FAKES = (() => { try { return new URLSearchParams(location.search).has("debug"); } catch (e) { return false; } })();
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  function fakePosition(fracMin, fracMax) {
+    const d = radiusNm() * rnd(fracMin, fracMax), b = toRad(rnd(0, 360));
+    return { lat: here.lat + (d * Math.cos(b)) / 60, lon: here.lon + (d * Math.sin(b)) / (60 * Math.cos(toRad(here.lat))) };
+  }
+  function fakeAircraft() {
+    // emergency: an airliner squawking 7700 / 7600 / 7500 with the matching emergency type
+    const em = pick([["7700", "general"], ["7700", "general"], ["7600", "nordo"], ["7500", "unlawful"]]);
+    const airline = pick(["AAL", "SWA", "UAL", "DAL", "ENY", "SKW", "FFT", "NKS", "JBU", "ASA"]);
+    const jet = pick([["A321", "A3"], ["A320", "A3"], ["B738", "A3"], ["B38M", "A3"], ["E175", "A3"], ["CRJ9", "A2"], ["A21N", "A3"]]);
+    const alt = Math.round(rnd(6000, 24000) / 100) * 100;
+    const emergency = {
+      hex: "~e" + Math.floor(rnd(0, 0xffff)).toString(16).padStart(4, "0"),
+      flight: airline + Math.floor(rnd(100, 3000)) + " ",
+      r: "N" + Math.floor(rnd(100, 999)) + pick(["AA", "NN", "UA", "DN", "WN", "FR"]),
+      t: jet[0], category: jet[1],
+      ...fakePosition(0.25, 0.9),
+      alt_baro: alt, alt_geom: alt + 150,
+      gs: Math.round(rnd(250, 420)), track: Math.round(rnd(0, 360)),
+      baro_rate: -Math.round(rnd(800, 2500) / 64) * 64,             // usually descending to land
+      nav_altitude_mcp: Math.round(rnd(3000, 10000) / 1000) * 1000,
+      squawk: em[0], emergency: em[1],
+    };
+    // medical: an air ambulance helicopter flying low with "lifeguard" status
+    const heli = pick(["EC35", "B407", "AS50", "A109", "EC45", "B429"]);
+    const medAlt = Math.round(rnd(800, 2500) / 25) * 25;
+    const medical = {
+      hex: "~m" + Math.floor(rnd(0, 0xffff)).toString(16).padStart(4, "0"),
+      flight: "N" + Math.floor(rnd(100, 999)) + pick(["AE", "LF", "CF", "MH", "PH", "AM"]) + " ",
+      t: heli, category: "A7",
+      ...fakePosition(0.15, 0.8),
+      alt_baro: medAlt, alt_geom: medAlt + 120,
+      gs: Math.round(rnd(105, 145)), track: Math.round(rnd(0, 360)),
+      baro_rate: Math.round(rnd(-300, 300) / 64) * 64,
+      squawk: String(Math.floor(rnd(1000, 6999))).replace(/[89]/g, "1"), emergency: "lifeguard",
+    };
+    return [emergency, medical];
+  }
+
   // ---- loop ----
   let timer = null, busy = false;
   async function tick() {
@@ -883,11 +931,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     busy = true;
     try {
       const { name, ac } = await fetchPlanes();
-      lastPlanes = normalize(ac);
+      lastPlanes = normalize(DEBUG_FAKES ? ac.concat(fakeAircraft()) : ac);
       dataTime = Date.now();
       render();
       const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
-      setStatus(`Live · ${name} · ${t} · ${refreshLabel()}`, "live");
+      setStatus(`Live · ${name} · ${t} · ${refreshLabel()}${DEBUG_FAKES ? " · test planes on" : ""}`, "live");
       fetchRoutes(lastPlanes).then(render);
       fetchModels(visiblePlanes()).then(render);
     } catch (e) {
