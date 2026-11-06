@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="1.10">
+<meta name="version" content="2.2">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -101,6 +101,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .filters select{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:15px;letter-spacing:0;text-transform:none;width:100%;min-width:0}
 .row .orig{font-family:var(--led);font-size:22px;color:var(--fg);opacity:.75;line-height:1;text-align:center}
 
+.hint{font-size:12px;color:var(--muted);line-height:1.45;margin:-4px 2px 0}
 .foot{font-size:12px;color:var(--muted);line-height:1.5;padding:0 2px}
 .foot a{color:var(--cyan)}
 
@@ -178,9 +179,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <label for="flightFilter">Flights<select id="flightFilter"></select></label>
     <label for="distFilter">Distance<select id="distFilter"></select></label>
   </div>
+  <p class="hint">Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky.</p>
   <div class="list" id="list"></div>
 
-  <p class="foot">Live ADS-B data from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a>. Routes from <a href="https://www.adsbdb.com" target="_blank" rel="noopener">adsbdb</a>, looked up by callsign and can be wrong. Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky. <span id="ver"></span></p>
+  <!-- Data sources: live ADS-B positions from adsb.lol (https://adsb.lol).
+       Routes from adsbdb (https://www.adsbdb.com), looked up by callsign, so they can be wrong. -->
+  <p class="foot"><span id="ver"></span></p>
 </div>
 
 <dialog id="settings">
@@ -207,6 +211,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     </div>
     <div class="field"><label for="units">Units</label>
       <select id="units"><option value="imperial">ft · mph · mi</option><option value="aviation">ft · kt · nm</option><option value="metric">m · km/h · km</option></select>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="saveBattery"> Save mobile battery</label>
+      <p class="note" id="batteryNote"></p>
     </div>
     <div class="field"><label for="ground">Planes on the ground</label>
       <select id="ground"><option value="hide">Hide</option><option value="show">Show</option></select>
@@ -246,12 +254,34 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 <script>
 (() => {
   "use strict";
-  const REFRESH_MS = 10000;
+  // How often fresh plane positions are fetched. "Save mobile battery" in Settings slows it down.
+  const REFRESH_NORMAL_MS = 30 * 1000;   // 30 seconds
+  const REFRESH_SAVER_MS = 2 * 60 * 1000; // 2 minutes
+  // A link can set its own rate in seconds, e.g. https://…/?refresh=15
+  // Anything under 10 seconds is raised to 10 (to go easy on the free data service), the
+  // most is 1 hour, and anything that isn't a number is ignored. When present, it
+  // overrides both the 30-second default and the battery saver's 2 minutes.
+  const URL_REFRESH_S = (() => {
+    try {
+      const raw = new URLSearchParams(location.search).get("refresh");
+      if (raw == null || raw.trim() === "") return null;
+      const n = Number(raw);
+      if (!isFinite(n)) return null;
+      return Math.min(3600, Math.max(10, Math.round(n)));
+    } catch (e) { return null; }
+  })();
+  const refreshMs = () => (URL_REFRESH_S ? URL_REFRESH_S * 1000 : cfg.saveBattery ? REFRESH_SAVER_MS : REFRESH_NORMAL_MS);
+  function refreshLabel() {
+    if (!URL_REFRESH_S) return cfg.saveBattery ? "every 2 min" : "every 30 s";
+    const s = URL_REFRESH_S;
+    const t = s < 120 ? `${s} s` : s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`;
+    return `every ${t} (set by link)`;
+  }
   const $ = (id) => document.getElementById(id);
 
   // ---- settings ----
   const defaults = { lat: null, lon: null, useGps: true, radius: 10, maxAlt: 99999, units: "imperial", ground: "hide", routeFilter: "all",
-    showClass: true, showNext: true, showProgress: true, showModel: true, showMedical: true, airportNames: "codes",
+    showClass: true, showNext: true, showProgress: true, showModel: true, showMedical: true, airportNames: "codes", saveBattery: false,
     sortKey: null, sortDir: 1, flightFilter: "all", distStep: 5 };
   let cfg = { ...defaults };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("overhead.cfg") || "{}")); } catch (e) {}
@@ -740,7 +770,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   // popup keeps moving between the 10-second data refreshes.
   const FT_PER_NM = 6076.12;
   function spotInfo(p) {
-    const dtH = Math.min(30, (Date.now() - dataTime) / 1000) / 3600;
+    const dtH = Math.min(150, (Date.now() - dataTime) / 1000) / 3600; // project up to one refresh ahead
     let x = p.dist * Math.sin(toRad(p.brg)), y = p.dist * Math.cos(toRad(p.brg)); // nm east / north of you
     let vx = 0, vy = 0;
     if (typeof p.gs === "number" && typeof p.track === "number" && p.alt !== "ground") {
@@ -857,7 +887,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       dataTime = Date.now();
       render();
       const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
-      setStatus(`Live · ${name} · ${t}`, "live");
+      setStatus(`Live · ${name} · ${t} · ${refreshLabel()}`, "live");
       fetchRoutes(lastPlanes).then(render);
       fetchModels(visiblePlanes()).then(render);
     } catch (e) {
@@ -867,13 +897,15 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function start() {
     clearInterval(timer);
     tick();
-    timer = setInterval(() => { if (!document.hidden) tick(); }, REFRESH_MS);
+    timer = setInterval(() => { if (!document.hidden) tick(); }, refreshMs());
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { tick(); keepAwake(); } });
 
-  // keep the screen on while open (nice for a propped-up phone "wall")
+  // keep the screen on while open (nice for a propped-up phone "wall"),
+  // except in battery-saver mode, where the screen is allowed to turn off normally
   let wakeLock = null;
   async function keepAwake() {
+    if (cfg.saveBattery) { try { if (wakeLock) await wakeLock.release(); } catch (e) {} wakeLock = null; return; }
     try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch (e) {}
   }
 
@@ -911,6 +943,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     $("units").value = cfg.units; $("ground").value = cfg.ground; $("routeFilter").value = cfg.routeFilter || "all";
     ["showClass", "showNext", "showProgress", "showModel", "showMedical"].forEach((k) => { $(k).checked = cfg[k] !== false; });
     $("airportNames").value = cfg.airportNames || "codes";
+    $("saveBattery").checked = Boolean(cfg.saveBattery);
+    batteryNote();
     $("locNote").textContent = "Manual coordinates are used when location access isn't available.";
   }
   // radius choices are shown in whichever units are picked in the same dialog
@@ -919,6 +953,18 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     [...$("radius").options].forEach((o) => { o.textContent = `${o.value} ${u}`; });
   }
   $("units").addEventListener("change", labelRadiusOptions);
+  // tell the user exactly what the battery switch changes, before they save
+  function batteryNote() {
+    if (URL_REFRESH_S) {
+      $("batteryNote").textContent = `This link sets updates to ${refreshLabel().replace(" (set by link)", "")}, which overrides this setting's update rate.` +
+        ($("saveBattery").checked ? " The screen can still turn off normally." : "");
+      return;
+    }
+    $("batteryNote").textContent = $("saveBattery").checked
+      ? "On: updates every 2 minutes instead of every 30 seconds, and the screen can turn off normally."
+      : "Off: updates every 30 seconds. Turn on to update every 2 minutes instead and let the screen turn off normally.";
+  }
+  $("saveBattery").addEventListener("change", batteryNote);
   $("openSettings").addEventListener("click", () => { fillForm(); dlg.showModal(); });
   $("useGps").addEventListener("click", () => {
     $("locNote").textContent = "Finding you…";
@@ -937,6 +983,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     cfg.units = $("units").value; cfg.ground = $("ground").value; cfg.routeFilter = $("routeFilter").value;
     ["showClass", "showNext", "showProgress", "showModel", "showMedical"].forEach((k) => { cfg[k] = $(k).checked; });
     cfg.airportNames = $("airportNames").value;
+    cfg.saveBattery = $("saveBattery").checked;
+    keepAwake();
     saveCfg();
     if (here) start();
   });
