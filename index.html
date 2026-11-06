@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="1.1">
+<meta name="version" content="1.3">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -60,7 +60,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .callsign{font-size:clamp(48px,14vw,96px);color:var(--amber);letter-spacing:.03em}
 .airline{font-size:clamp(22px,6vw,30px);color:var(--fg);margin-top:4px;opacity:.9}
 .route{font-size:clamp(34px,10vw,54px);color:var(--cyan);margin-top:10px;display:flex;align-items:center;gap:.3em;flex-wrap:wrap}
-.route .arrow{color:var(--amber-dim)}
+.route .arrow{color:var(--amber-dim);align-self:flex-end}
+.route .ap{display:flex;flex-direction:column;gap:2px}
+.route .ap .k{font-family:var(--ui);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-shadow:none;line-height:1}
 .type{font-size:clamp(20px,5.5vw,26px);color:var(--muted);margin-top:4px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px;border-top:1px dashed #2a2f35;padding-top:12px}
 .stat .k{font-family:var(--ui);font-size:10px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;text-shadow:none}
@@ -75,7 +77,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 /* list */
 .listhead{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:0 2px}
 .list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
-.row{display:grid;grid-template-columns:minmax(0,1fr) 2.4em 2.4em 3.6em 2.8em;gap:8px;align-items:center;padding:11px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 2.4rem 2.4rem 3.6rem 2.8rem;gap:8px;align-items:center;padding:11px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%}
 .row:first-child{border-top:0}
 .row.sel{background:#141a20}
 .row .cs{font-family:var(--led);font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:clip;color:var(--amber);line-height:1}
@@ -362,7 +364,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
         <div class="compass" title="Plane is ${compass8(p.brg)} of you">${compassSvg(p.track, p.brg)}</div>
       </div>
       <div class="led route">${route
-        ? `${esc(route[0])}<span class="arrow">▶</span>${esc(route[route.length - 1])}${route.length > 2 ? `<span class="type" style="margin:0">via ${esc(route.slice(1, -1).join(", "))}</span>` : ""}`
+        ? `<span class="ap"><span class="k">From</span>${esc(route[0])}</span><span class="arrow">▶</span><span class="ap"><span class="k">To</span>${esc(route[route.length - 1])}</span>${route.length > 2 ? `<span class="type" style="margin:0">via ${esc(route.slice(1, -1).join(", "))}</span>` : ""}`
         : `<span style="color:var(--amber-dim)">${rc && rc.pending ? "ROUTE…" : "ROUTE N/A"}</span>`}</div>
       <div class="led type">${esc(typeLine || "Type unknown")}</div>
       <div class="stats">
