@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="1.4">
+<meta name="version" content="1.5">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -75,11 +75,12 @@ button{font:inherit;color:inherit;cursor:pointer}
 .empty small{display:block;font-family:var(--ui);font-size:13px;color:var(--muted);margin-top:10px;text-shadow:none;line-height:1.4}
 
 /* list */
-.listhead{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:0 2px}
+.listhead{display:flex;justify-content:space-between;align-items:baseline;font-size:16.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:0 2px}
 .list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
 .row{display:grid;grid-template-columns:minmax(0,1fr) 2.4rem 2.4rem 3.6rem 2.8rem;gap:8px;align-items:center;padding:11px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%}
 .row:first-child{border-top:0}
 .row.sel{background:#141a20}
+.row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .row .cs{font-family:var(--led);font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:clip;color:var(--amber);line-height:1}
 .row .sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .num{font-variant-numeric:tabular-nums;font-size:14px;text-align:right;white-space:nowrap}
@@ -107,9 +108,43 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .btn{background:#06080a;border:1px solid var(--line);border-radius:8px;padding:10px 14px}
 .btn.primary{background:var(--amber);color:#1a0510;border-color:var(--amber);font-weight:600}
 .note{font-size:12px;color:var(--muted);line-height:1.45;margin:0}
+.field label.check{display:flex;align-items:center;gap:10px;font-size:15px;letter-spacing:0;text-transform:none;color:var(--fg);cursor:pointer}
+.field label.check input{width:20px;height:20px;padding:0;margin:0;flex:none;accent-color:var(--amber)}
+#settings{max-height:calc(100dvh - 32px);overflow:auto}
+
+/* extra display details */
+.badge{display:inline-block;font-family:var(--ui);font-size:11px;letter-spacing:.12em;text-transform:uppercase;border:1px solid currentColor;color:var(--cyan);border-radius:4px;padding:2px 6px;text-shadow:none;vertical-align:middle;margin-left:8px;line-height:1.2}
+.next{font-size:clamp(20px,5.5vw,26px);color:var(--green);margin-top:4px}
+.route.names{font-size:clamp(24px,6.5vw,36px);flex-direction:column;align-items:flex-start;gap:10px}
+.route.names .arrow{display:none}
+.route .ap .nm{font-family:var(--ui);font-size:12px;color:var(--muted);text-shadow:none;line-height:1.25;max-width:14em}
+.prog{margin-top:12px;position:relative;z-index:1}
+.prog .bar{height:8px;background:#151b21;border-radius:4px;overflow:hidden}
+.prog .bar i{display:block;height:100%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.prog .pl{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-top:5px;font-variant-numeric:tabular-nums}
+
+/* emergency */
+.emer-banner{display:inline-block;font-family:var(--led);font-size:clamp(22px,6vw,30px);letter-spacing:.06em;color:#fff;background:var(--red);border-radius:6px;padding:2px 10px;margin-bottom:8px;text-shadow:none;line-height:1.1}
+.wall.emer{border-color:var(--red);box-shadow:inset 0 0 50px rgba(255,60,40,.35),0 0 0 2px var(--red)}
+.row.emer{background:rgba(255,122,107,.2)}
+.row.emer .cs{color:var(--red)}
+
+/* spot-it popup */
+.spot-dir{font-family:var(--led);font-size:clamp(36px,10vw,48px);color:var(--amber);line-height:1;text-shadow:0 0 6px currentColor}
+.spot-sky{display:block;width:100%;max-width:260px;height:auto;margin:4px 0}
+.spot-list{display:flex;flex-direction:column;gap:8px;font-size:15px;line-height:1.4}
+.spot-list .k{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.spot-warn{color:var(--amber)}
 @media (prefers-reduced-motion:no-preference){
   .flash{animation:flash .5s ease-out}
   @keyframes flash{from{filter:brightness(1.8)}to{filter:none}}
+  /* emergencies flash; with reduced motion they stay solid red (rules above) */
+  .wall.emer,.wall.emer.flash{animation:emerWall 1s ease-in-out infinite}
+  .row.emer{animation:emerRow 1s ease-in-out infinite}
+  .emer-banner{animation:emerBanner 1s steps(1) infinite}
+  @keyframes emerWall{50%{box-shadow:inset 0 0 80px rgba(255,60,40,.7),0 0 22px 3px var(--red)}}
+  @keyframes emerRow{50%{background:rgba(255,122,107,.45)}}
+  @keyframes emerBanner{50%{background:#7a1d14}}
 }
 </style>
 </head>
@@ -130,7 +165,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <div class="listhead"><span id="countLabel">In range</span><span id="rangeLabel"></span></div>
   <div class="list" id="list"></div>
 
-  <p class="foot">Live ADS-B data from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a>. Routes from <a href="https://www.adsbdb.com" target="_blank" rel="noopener">adsbdb</a>, looked up by callsign and can be wrong. Tap a plane in the list to put it on the wall. <span id="ver"></span></p>
+  <p class="foot">Live ADS-B data from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a>. Routes from <a href="https://www.adsbdb.com" target="_blank" rel="noopener">adsbdb</a>, looked up by callsign and can be wrong. Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky. <span id="ver"></span></p>
 </div>
 
 <dialog id="settings">
@@ -165,11 +200,31 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <select id="routeFilter"><option value="all">Show all planes</option><option value="both">Hide if From and To are both unknown</option><option value="either">Hide if From or To is unknown</option></select>
       <p class="note">Private planes rarely have a route, so these filters mostly hide them. Planes still being looked up stay hidden until their route arrives.</p>
     </div>
+    <div class="field">
+      <span class="lbl">Show on display</span>
+      <label class="check"><input type="checkbox" id="showClass"> Aircraft size / class</label>
+      <label class="check"><input type="checkbox" id="showNext"> Where it's headed next</label>
+      <label class="check"><input type="checkbox" id="showProgress"> Flight progress</label>
+      <label class="check"><input type="checkbox" id="showModel"> Manufacturer &amp; model</label>
+    </div>
+    <div class="field"><label for="airportNames">Airports</label>
+      <select id="airportNames"><option value="codes">Codes (ORD → DFW)</option><option value="names">City names (Chicago → Dallas-Fort Worth)</option></select>
+    </div>
     <div class="btnrow" style="justify-content:flex-end">
       <button class="btn" value="cancel" type="submit">Cancel</button>
       <button class="btn primary" value="save" id="saveBtn" type="submit">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="spot" aria-labelledby="spotTitle">
+  <div class="sheet">
+    <h2 id="spotTitle">SPOT IT</h2>
+    <div id="spotBody"></div>
+    <div class="btnrow" style="justify-content:flex-end">
+      <button class="btn primary" id="spotClose" type="button">Close</button>
+    </div>
+  </div>
 </dialog>
 
 <script>
@@ -179,7 +234,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   const $ = (id) => document.getElementById(id);
 
   // ---- settings ----
-  const defaults = { lat: null, lon: null, useGps: true, radius: 10, maxAlt: 99999, units: "imperial", ground: "hide", routeFilter: "all" };
+  const defaults = { lat: null, lon: null, useGps: true, radius: 10, maxAlt: 99999, units: "imperial", ground: "hide", routeFilter: "all",
+    showClass: true, showNext: true, showProgress: true, showModel: true, airportNames: "codes" };
   let cfg = { ...defaults };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("overhead.cfg") || "{}")); } catch (e) {}
   const saveCfg = () => { try { localStorage.setItem("overhead.cfg", JSON.stringify(cfg)); } catch (e) {} };
@@ -187,7 +243,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   let here = (cfg.lat != null && cfg.lon != null) ? { lat: +cfg.lat, lon: +cfg.lon } : null;
   let pinnedHex = null;
   let lastPlanes = [];
-  const routeCache = new Map(); // callsign -> {route, t}
+  const routeCache = new Map(); // callsign -> {route:[from,to], o:{airport}, d:{airport}} or {pending}
+  const modelCache = new Map(); // icao hex -> {model} or {pending}
+  let dataTime = Date.now();    // when the current plane positions were received
 
   // ---- airlines (ICAO 3-letter prefix) ----
   const AIRLINES = {
@@ -288,9 +346,16 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       if (r.status === 404) return { route: null };
       if (!r.ok) throw new Error("HTTP " + r.status);
       const f = ((await r.json()).response || {}).flightroute;
-      const code = (a) => a && (a.iata_code || a.icao_code);
-      const o = f && code(f.origin), d = f && code(f.destination);
-      return { route: o || d ? [o || null, d || null] : null };
+      const ap = (a) => a ? {
+        code: a.iata_code || a.icao_code || null,
+        city: a.municipality || null,
+        name: a.name || null,
+        lat: typeof a.latitude === "number" ? a.latitude : null,
+        lon: typeof a.longitude === "number" ? a.longitude : null,
+      } : null;
+      const o = ap(f && f.origin), d = ap(f && f.destination);
+      const oc = o && o.code, dc = d && d.code;
+      return { route: oc || dc ? [oc || null, dc || null] : null, o, d };
     } catch (e) {
       return null; // network hiccup: try again next cycle
     }
@@ -305,8 +370,65 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     }));
   }
 
+  // Manufacturer & model come from adsbdb's aircraft record, looked up by transponder (ICAO hex) code.
+  // Only the make and model are used; the record's owner details are deliberately ignored.
+  async function lookupModel(hex) {
+    try {
+      const r = await fetch(`https://api.adsbdb.com/v0/aircraft/${encodeURIComponent(hex)}`);
+      if (r.status === 404) return { model: null };
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const a = ((await r.json()).response || {}).aircraft || {};
+      const model = [a.manufacturer, a.type].filter(Boolean).join(" ");
+      return { model: model || null };
+    } catch (e) {
+      return null;
+    }
+  }
+  async function fetchModels(planes) {
+    if (cfg.showModel === false) return;
+    const need = planes.filter((p) => p.hex && !modelCache.has(p.hex)).slice(0, 10);
+    if (!need.length) return;
+    need.forEach((p) => modelCache.set(p.hex, { pending: true }));
+    await Promise.all(need.map(async (p) => {
+      const res = await lookupModel(p.hex);
+      if (res) modelCache.set(p.hex, res); else modelCache.delete(p.hex);
+    }));
+  }
+
+  // ---- Privacy: planes whose owners asked not to be tracked ----------------------------
+  // adsb.lol marks some aircraft with "dbFlags", bit flags copied from aircraft databases:
+  //   1 = military, 2 = "interesting", 4 = PIA, 8 = LADD.
+  // LADD ("Limiting Aircraft Data Displayed") is an FAA program where an aircraft owner,
+  // usually a private operator, asks that the plane's flights not be shown on public
+  // flight-tracking displays. PIA ("Privacy ICAO Address") is a related FAA program that
+  // gives a plane a temporary, anonymous transponder address for the same reason.
+  // As a courtesy to those owners, these planes are dropped right here, before anything
+  // else sees them: they are never shown, counted as "in range" or "hidden", or mentioned
+  // anywhere in the app. This is a choice, not a legal requirement for hobby use, and it
+  // is intentionally not a user setting.
+  const PRIVACY_FLAGS = 4 | 8; // PIA | LADD
+  const optedOutOfTracking = (a) => ((a.dbFlags | 0) & PRIVACY_FLAGS) !== 0;
+
+  // ---- Emergencies ----------------------------------------------------------------------
+  // Pilots signal trouble by setting a special transponder ("squawk") code, and newer
+  // transponders also report an emergency type. "lifeguard" (medical priority flight) is a
+  // routine status, so it is deliberately not treated as an emergency.
+  const EMERGENCY_SQUAWKS = { "7700": "EMERGENCY", "7600": "RADIO FAILURE", "7500": "HIJACK" };
+  const EMERGENCY_TYPES = { general: "EMERGENCY", minfuel: "MINIMUM FUEL", nordo: "RADIO FAILURE", unlawful: "HIJACK", downed: "AIRCRAFT DOWN", reserved: "EMERGENCY" };
+  function emergencyOf(a) {
+    if (a.squawk && EMERGENCY_SQUAWKS[a.squawk]) return `${EMERGENCY_SQUAWKS[a.squawk]} · ${a.squawk}`;
+    if (a.emergency && EMERGENCY_TYPES[a.emergency]) return EMERGENCY_TYPES[a.emergency];
+    return null;
+  }
+
+  // Emitter category broadcast by the plane itself (DO-260B)
+  const CLASSES = { A1: "Light", A2: "Small", A3: "Large", A4: "Large (757)", A5: "Heavy", A6: "High performance",
+    A7: "Helicopter", B1: "Glider", B2: "Balloon", B3: "Parachutist", B4: "Ultralight", B6: "Drone", B7: "Space vehicle",
+    C1: "Emergency vehicle", C2: "Ground vehicle" };
+
   function normalize(ac) {
     return ac
+      .filter((a) => !optedOutOfTracking(a)) // privacy opt-outs: see note above; must stay first
       .filter((a) => a.lat != null && a.lon != null)
       .map((a) => {
         const pos = { lat: a.lat, lon: a.lon };
@@ -321,6 +443,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
           gs: a.gs ?? null,
           track: a.track ?? a.true_heading ?? null,
           vs: a.baro_rate ?? a.geom_rate ?? null,
+          altGeom: typeof a.alt_geom === "number" ? a.alt_geom : null,
+          category: a.category || null,
+          navAlt: a.nav_altitude_mcp ?? a.nav_altitude_fms ?? null, // autopilot target altitude
+          navHdg: a.nav_heading ?? null,                             // autopilot target heading
+          emer: emergencyOf(a),
           lat: a.lat, lon: a.lon,
           dist: d,
           brg: bearing(here, pos),
@@ -329,7 +456,40 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       .filter((p) => p.dist <= cfg.radius + 0.5)
       .filter((p) => cfg.ground === "show" || p.alt !== "ground")
       .filter((p) => p.alt === "ground" || p.alt == null || p.alt <= cfg.maxAlt)
-      .sort((a, b) => a.dist - b.dist);
+      .sort((a, b) => (b.emer ? 1 : 0) - (a.emer ? 1 : 0) || a.dist - b.dist); // emergencies first
+  }
+
+  // ---- extra details ----
+  function nextStr(p) {
+    if (p.alt === "ground" || typeof p.alt !== "number") return null;
+    const parts = [];
+    if (typeof p.navAlt === "number" && p.navAlt > 0) {
+      const t = altStr(p.navAlt), diff = p.navAlt - p.alt;
+      parts.push(diff > 300 ? `Climbing to ${t.v} ${t.u}` : diff < -300 ? `Descending to ${t.v} ${t.u}` : `Level at ${t.v} ${t.u}`);
+    }
+    if (typeof p.navHdg === "number") {
+      const h = `${String(Math.round(p.navHdg) % 360).padStart(3, "0")}° ${compass8(p.navHdg)}`;
+      parts.push(parts.length ? `heading ${h}` : `Heading ${h}`);
+    }
+    return parts.length ? parts.join(" · ") : null;
+  }
+  function progressOf(p, rc) {
+    const o = rc && rc.o, d = rc && rc.d;
+    if (!o || !d || o.lat == null || d.lat == null) return null;
+    const total = distNm(o, d), done = distNm(o, p), left = distNm(p, d);
+    if (total < 20 || done + left > total * 1.4 + 50) return null; // route looks wrong for this position
+    const frac = Math.min(1, Math.max(0, done / (done + left)));
+    let eta = null;
+    if (typeof p.gs === "number" && p.gs > 60) {
+      const mins = Math.round(left / p.gs * 60);
+      eta = mins >= 60 ? `~${Math.floor(mins / 60)}h ${mins % 60}m to go` : `~${mins} min to go`;
+    }
+    return { frac, eta, left };
+  }
+  function apHtml(label, a, code) {
+    const useNames = cfg.airportNames === "names" && a && (a.city || a.name);
+    if (!useNames) return `<span class="ap"><span class="k">${label}</span>${esc(code || "—")}</span>`;
+    return `<span class="ap"><span class="k">${label}</span>${esc(a.city || a.name)}<span class="nm">${esc([a.name, code].filter(Boolean).join(" · "))}</span></span>`;
   }
 
   // ---- render ----
@@ -348,6 +508,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function renderWall(p) {
     const wall = $("wall");
     if (!p) {
+      wall.classList.remove("emer");
       wall.innerHTML = hiddenCount
         ? `<div class="led empty">NO ROUTED FLIGHTS<small>${hiddenCount} plane${hiddenCount === 1 ? "" : "s"} in range without a known route ${hiddenCount === 1 ? "is" : "are"} hidden. Change "Planes without a route" in Settings to see ${hiddenCount === 1 ? "it" : "them"}.</small></div>`
         : `<div class="led empty">CLEAR SKIES<small>No aircraft within ${cfg.radius} nm right now. Try a bigger radius in Settings.</small></div>`;
@@ -360,19 +521,28 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (typeof p.vs === "number" && Math.abs(p.vs) > 300 && p.alt !== "ground") {
       vsHtml = p.vs > 0 ? ` <small class="vs-up">▲</small>` : ` <small class="vs-dn">▼</small>`;
     }
-    const typeLine = [p.desc || p.type, p.reg].filter(Boolean).join(" · ");
+    const mc = cfg.showModel !== false ? modelCache.get(p.hex) : null;
+    const typeLine = [(mc && mc.model) || p.desc || p.type, p.reg].filter(Boolean).join(" · ");
+    const cls = cfg.showClass !== false && CLASSES[p.category];
+    const next = cfg.showNext !== false ? nextStr(p) : null;
+    const prog = cfg.showProgress !== false ? progressOf(p, rc) : null;
+    const names = cfg.airportNames === "names";
+    wall.classList.toggle("emer", Boolean(p.emer));
     wall.innerHTML = `
+      ${p.emer ? `<div class="emer-banner">⚠ ${esc(p.emer)}</div>` : ""}
       <div class="w-top">
         <div style="min-width:0">
           <div class="led callsign">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div>
-          <div class="led airline">${esc(airlineFor(p.callsign, p.reg))}</div>
+          <div class="led airline">${esc(airlineFor(p.callsign, p.reg))}${cls ? `<span class="badge">${esc(cls)}</span>` : ""}</div>
         </div>
         <div class="compass" title="Plane is ${compass8(p.brg)} of you">${compassSvg(p.track, p.brg)}</div>
       </div>
-      <div class="led route">${route
-        ? `<span class="ap"><span class="k">From</span>${esc(route[0] || "—")}</span><span class="arrow">▶</span><span class="ap"><span class="k">To</span>${esc(route[1] || "—")}</span>`
+      <div class="led route${route && names ? " names" : ""}">${route
+        ? `${apHtml("From", rc.o, route[0])}<span class="arrow">▶</span>${apHtml("To", rc.d, route[1])}`
         : `<span style="color:var(--amber-dim)">${rc && rc.pending ? "ROUTE…" : "ROUTE N/A"}</span>`}</div>
+      ${prog ? `<div class="prog" aria-label="Flight ${Math.round(prog.frac * 100)}% complete"><div class="bar"><i style="width:${(prog.frac * 100).toFixed(1)}%"></i></div><div class="pl"><span>${Math.round(prog.frac * 100)}% complete</span><span>${esc(prog.eta || "")}</span></div></div>` : ""}
       <div class="led type">${esc(typeLine || "Type unknown")}</div>
+      ${next ? `<div class="led next">${esc(next)}</div>` : ""}
       <div class="stats">
         <div class="stat"><div class="k">Altitude</div><div class="led v">${a.v}${vsHtml}<small> ${a.u}</small></div></div>
         <div class="stat"><div class="k">Speed</div><div class="led v">${s.v}<small> ${s.u}</small></div></div>
@@ -393,9 +563,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const route = rc && rc.route;
       const dest = route ? route[1] : null;
       const orig = route ? route[0] : null;
-      const subLine = [airlineFor(p.callsign, p.reg), p.type].filter(Boolean).join(" · ");
+      const subLine = [airlineFor(p.callsign, p.reg), p.type, cfg.showClass !== false && CLASSES[p.category]].filter(Boolean).join(" · ");
       const a = altStr(p.alt), d = dstStr(p.dist);
-      return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}" data-hex="${esc(p.hex)}">
+      return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
         <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${esc(subLine)}</div></div>
         <div class="orig${orig ? "" : " na"}">${orig ? esc(orig) : "—"}</div>
         <div class="dest${dest ? "" : " na"}">${dest ? esc(dest) : (rc && rc.pending ? "…" : "—")}</div>
@@ -409,7 +579,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   let hiddenCount = 0;
   function routeOk(p) {
     const mode = cfg.routeFilter || "all";
-    if (mode === "all") return true;
+    if (mode === "all" || p.emer) return true; // never hide an emergency behind a route filter
     const rc = routeCache.get(p.callsign);
     if (!rc || rc.pending || !rc.route) return false; // unknown or still looking up
     const [o, d] = rc.route;
@@ -423,19 +593,133 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   function render() {
     const planes = visiblePlanes();
-    let sel = planes.find((p) => p.hex === pinnedHex);
+    // an emergency takes over the big display; otherwise the tapped plane, otherwise the nearest
+    let sel = planes.find((p) => p.emer) || planes.find((p) => p.hex === pinnedHex);
     if (!sel) { pinnedHex = null; sel = planes[0]; }
     renderWall(sel);
     renderList(planes, sel && sel.hex);
+    if (spotHex) renderSpot();
   }
 
   $("list").addEventListener("click", (e) => {
     const row = e.target.closest(".row[data-hex]");
     if (!row) return;
+    if (suppressClick) { suppressClick = false; return; } // that was a long-press
     const first = visiblePlanes()[0];
     pinnedHex = row.dataset.hex === (first && first.hex) ? null : row.dataset.hex;
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  // ---- "Spot it": where to look in the sky -------------------------------------------
+  // Positions are projected forward from the last update using speed and track, so the
+  // popup keeps moving between the 10-second data refreshes.
+  const FT_PER_NM = 6076.12;
+  function spotInfo(p) {
+    const dtH = Math.min(30, (Date.now() - dataTime) / 1000) / 3600;
+    let x = p.dist * Math.sin(toRad(p.brg)), y = p.dist * Math.cos(toRad(p.brg)); // nm east / north of you
+    let vx = 0, vy = 0;
+    if (typeof p.gs === "number" && typeof p.track === "number" && p.alt !== "ground") {
+      vx = p.gs * Math.sin(toRad(p.track)); vy = p.gs * Math.cos(toRad(p.track)); // knots
+    }
+    x += vx * dtH; y += vy * dtH;
+    const ground = Math.hypot(x, y);
+    const brg = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+    const altFt = p.alt === "ground" ? 0 : (p.altGeom ?? (typeof p.alt === "number" ? p.alt : 0));
+    const h = Math.max(0, altFt - ((here && here.altFt) || 0)); // height above you (sea level if unknown)
+    const elevAt = (nm) => Math.atan2(h, Math.max(nm, 0.01) * FT_PER_NM) * 180 / Math.PI;
+    let cpa = null;
+    const v2 = vx * vx + vy * vy;
+    if (v2 > 400) { // moving faster than ~20 kt
+      const t = -(x * vx + y * vy) / v2; // hours until closest approach (negative = already passed)
+      const cx = x + vx * t, cy = y + vy * t, cd = Math.hypot(cx, cy);
+      cpa = { sec: t * 3600, dist: cd, brg: (Math.atan2(cx, cy) * 180 / Math.PI + 360) % 360, elev: elevAt(cd) };
+    }
+    return { ground, brg, elev: elevAt(ground), slant: Math.hypot(ground, h / FT_PER_NM), cpa };
+  }
+  const mmss = (sec) => { sec = Math.round(Math.abs(sec)); return sec >= 60 ? `${Math.floor(sec / 60)} min ${String(sec % 60).padStart(2, "0")} s` : `${sec} s`; };
+  function skySvg(elev, brg) {
+    // side view: you at the centre of the horizon, plane on the arc at its elevation angle
+    const e = toRad(Math.max(0, Math.min(90, elev)));
+    const left = brg > 180; // draw on the side it's on, roughly
+    const px = 130 + (left ? -1 : 1) * 100 * Math.cos(e), py = 115 - 100 * Math.sin(e);
+    return `<svg class="spot-sky" viewBox="0 0 260 130" role="img" aria-label="${Math.round(elev)} degrees above the horizon">
+      <path d="M30 115 A100 100 0 0 1 230 115" fill="none" stroke="#2a3138" stroke-width="1.5" stroke-dasharray="3 4"/>
+      <line x1="10" y1="115" x2="250" y2="115" stroke="#7b8893" stroke-width="1.5"/>
+      <line x1="130" y1="115" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" stroke="#ff4fa3" stroke-width="2"/>
+      <circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="6" fill="#ff4fa3"/>
+      <circle cx="130" cy="115" r="4" fill="#7fd8ff"/>
+      <text x="130" y="128" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="10" fill="#7b8893">YOU</text>
+      <text x="${left ? 14 : 246}" y="108" text-anchor="${left ? "start" : "end"}" font-family="IBM Plex Sans Condensed, sans-serif" font-size="10" fill="#7b8893">HORIZON</text>
+    </svg>`;
+  }
+  let spotHex = null, spotTimer = null;
+  function renderSpot() {
+    const p = lastPlanes.find((q) => q.hex === spotHex);
+    $("spotTitle").textContent = "SPOT " + (p ? (p.callsign || p.reg || p.hex.toUpperCase()) : "IT");
+    if (!p) {
+      $("spotBody").innerHTML = `<p class="note">This plane has left the area you're watching.</p>`;
+      return;
+    }
+    const s = spotInfo(p);
+    const up = Math.round(s.elev);
+    const lines = [];
+    lines.push(`<div><span class="k">Look</span>${esc(compass8(s.brg))} (${Math.round(s.brg)}°), about ${up}° above the horizon. A fist held at arm's length covers about 10°.</div>`);
+    const slant = dstStr(s.slant);
+    lines.push(`<div><span class="k">Distance</span>${slant.v} ${slant.u} away in a straight line.</div>`);
+    if (s.cpa) {
+      const cd = dstStr(s.cpa.dist);
+      if (s.cpa.sec > 15) lines.push(`<div><span class="k">Closest pass</span>In about ${mmss(s.cpa.sec)}, ${cd.v} ${cd.u} away to the ${esc(compass8(s.cpa.brg))}, about ${Math.round(s.cpa.elev)}° up.</div>`);
+      else if (s.cpa.sec >= -15) lines.push(`<div><span class="k">Closest pass</span>Passing closest right now.</div>`);
+      else lines.push(`<div><span class="k">Closest pass</span>Moving away. Its closest pass was about ${mmss(s.cpa.sec)} ago, ${cd.v} ${cd.u} away.</div>`);
+    } else {
+      lines.push(`<div><span class="k">Closest pass</span>Not moving fast enough to predict.</div>`);
+    }
+    let vis;
+    if (p.alt === "ground") vis = "On the ground, so you'd need a clear view of the airport.";
+    else if (up < 5) vis = "Very low on the horizon. Trees or buildings will probably hide it.";
+    else if (up < 15) vis = "Low in the sky. You'll need a clear view toward the horizon.";
+    else if (up >= 60) vis = "Nearly straight overhead. Look up!";
+    else vis = "Should be easy to spot with a clear sky.";
+    lines.push(`<div class="${up < 5 ? "spot-warn" : ""}"><span class="k">Visibility</span>${vis}</div>`);
+    $("spotBody").innerHTML = `
+      <div class="spot-dir">LOOK ${esc(compass8(s.brg))} · ${up}° UP</div>
+      ${skySvg(s.elev, s.brg)}
+      <div class="spot-list">${lines.join("")}</div>`;
+  }
+  const spotDlg = $("spot");
+  function openSpot(hex) {
+    spotHex = hex;
+    renderSpot();
+    if (!spotDlg.open) spotDlg.showModal();
+    clearInterval(spotTimer);
+    spotTimer = setInterval(renderSpot, 1000); // keep the countdown and angle moving
+  }
+  spotDlg.addEventListener("close", () => { spotHex = null; clearInterval(spotTimer); });
+  $("spotClose").addEventListener("click", () => spotDlg.close());
+  spotDlg.addEventListener("click", (e) => { if (e.target === spotDlg) spotDlg.close(); }); // tap outside closes
+
+  // right-click on a computer
+  $("list").addEventListener("contextmenu", (e) => {
+    const row = e.target.closest(".row[data-hex]");
+    if (!row) return;
+    e.preventDefault();
+    openSpot(row.dataset.hex);
+  });
+  // long-press on a phone (iPhone Safari has no right-click)
+  let pressTimer = null, pressStart = null, suppressClick = false;
+  $("list").addEventListener("pointerdown", (e) => {
+    const row = e.target.closest(".row[data-hex]");
+    if (!row || e.pointerType === "mouse") return;
+    pressStart = { x: e.clientX, y: e.clientY };
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { suppressClick = true; openSpot(row.dataset.hex); }, 550);
+  });
+  const cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+  $("list").addEventListener("pointerup", cancelPress);
+  $("list").addEventListener("pointercancel", cancelPress);
+  $("list").addEventListener("pointermove", (e) => {
+    if (pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 10) cancelPress();
   });
 
   // ---- loop ----
@@ -446,10 +730,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     try {
       const { name, ac } = await fetchPlanes();
       lastPlanes = normalize(ac);
+      dataTime = Date.now();
       render();
       const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
       setStatus(`Live · ${name} · ${t}`, "live");
       fetchRoutes(lastPlanes).then(render);
+      fetchModels(visiblePlanes()).then(render);
     } catch (e) {
       setStatus("Can't reach flight data · retrying", "err");
     } finally { busy = false; }
@@ -473,7 +759,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     setStatus("Finding your location…");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        here = { lat: pos.coords.latitude, lon: pos.coords.longitude,
+          altFt: typeof pos.coords.altitude === "number" ? pos.coords.altitude * 3.28084 : null };
         cfg.lat = +here.lat.toFixed(4); cfg.lon = +here.lon.toFixed(4); saveCfg();
         onDone && onDone(true);
         start();
@@ -497,6 +784,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     $("lat").value = cfg.lat ?? ""; $("lon").value = cfg.lon ?? "";
     $("radius").value = String(cfg.radius); $("maxAlt").value = String(cfg.maxAlt);
     $("units").value = cfg.units; $("ground").value = cfg.ground; $("routeFilter").value = cfg.routeFilter || "all";
+    ["showClass", "showNext", "showProgress", "showModel"].forEach((k) => { $(k).checked = cfg[k] !== false; });
+    $("airportNames").value = cfg.airportNames || "codes";
     $("locNote").textContent = "Manual coordinates are used when location access isn't available.";
   }
   $("openSettings").addEventListener("click", () => { fillForm(); dlg.showModal(); });
@@ -515,6 +804,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     }
     cfg.radius = +$("radius").value; cfg.maxAlt = +$("maxAlt").value;
     cfg.units = $("units").value; cfg.ground = $("ground").value; cfg.routeFilter = $("routeFilter").value;
+    ["showClass", "showNext", "showProgress", "showModel"].forEach((k) => { cfg[k] = $(k).checked; });
+    cfg.airportNames = $("airportNames").value;
     saveCfg();
     if (here) start();
   });
