@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="1.8">
+<meta name="version" content="1.10">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -221,7 +221,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <label class="check"><input type="checkbox" id="showNext"> Where it's headed next</label>
       <label class="check"><input type="checkbox" id="showProgress"> Flight progress</label>
       <label class="check"><input type="checkbox" id="showModel"> Manufacturer &amp; model</label>
-      <label class="check"><input type="checkbox" id="showMedical"> Medical flight badge</label>
+      <label class="check"><input type="checkbox" id="showMedical"> Medical flight</label>
     </div>
     <div class="field"><label for="airportNames">Airports</label>
       <select id="airportNames"><option value="codes">Codes (ORD → DFW)</option><option value="names">City names (Chicago → Dallas-Fort Worth)</option></select>
@@ -252,7 +252,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   // ---- settings ----
   const defaults = { lat: null, lon: null, useGps: true, radius: 10, maxAlt: 99999, units: "imperial", ground: "hide", routeFilter: "all",
     showClass: true, showNext: true, showProgress: true, showModel: true, showMedical: true, airportNames: "codes",
-    sortKey: "dist", sortDir: 1, flightFilter: "all", distStep: 5 };
+    sortKey: null, sortDir: 1, flightFilter: "all", distStep: 5 };
   let cfg = { ...defaults };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("overhead.cfg") || "{}")); } catch (e) {}
   const saveCfg = () => { try { localStorage.setItem("overhead.cfg", JSON.stringify(cfg)); } catch (e) {} };
@@ -603,7 +603,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   }
 
   // ---- sorting (column headers) ----
-  // Click a header to sort by it; click again to reverse. Emergencies always stay on top.
+  // Click a header to sort by it, click again to reverse, click a third time to clear sorting
+  // (back to the default: nearest first, no arrow). Emergencies always stay on top.
   const SORTS = {
     flight: { label: "Flight", get: (p) => p.callsign || p.reg || p.hex.toUpperCase(), text: true },
     from:   { label: "From", get: (p) => { const r = routeCache.get(p.callsign); return r && r.route && r.route[0]; }, text: true },
@@ -612,7 +613,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     dist:   { label: "Dist", get: (p) => p.dist },
   };
   function sortPlanes(planes) {
-    const key = SORTS[cfg.sortKey] ? cfg.sortKey : "dist", dir = cfg.sortDir === -1 ? -1 : 1, s = SORTS[key];
+    const key = SORTS[cfg.sortKey] ? cfg.sortKey : "dist", dir = SORTS[cfg.sortKey] && cfg.sortDir === -1 ? -1 : 1, s = SORTS[key];
     return planes.slice().sort((a, b) => {
       if (Boolean(a.emer) !== Boolean(b.emer)) return a.emer ? -1 : 1;
       const va = s.get(a), vb = s.get(b);
@@ -624,7 +625,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   }
   function headerHtml() {
     const cell = (key, label) => {
-      const on = (cfg.sortKey || "dist") === key, dir = cfg.sortDir === -1 ? -1 : 1;
+      const on = cfg.sortKey === key, dir = cfg.sortDir === -1 ? -1 : 1;
       const ar = on ? `<span class="ar">${dir === 1 ? "▲" : "▼"}</span>` : "";
       return `<div><button type="button" class="sort${on ? " on" : ""}" data-sort="${key}" aria-label="Sort by ${label}${on ? (dir === 1 ? ", ascending" : ", descending") : ""}">${esc(label)}${ar}</button></div>`;
     };
@@ -635,11 +636,22 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   // Flights: all / private / airline / one aircraft type (types offered are the ones in range now).
   // "Private" means no airline-style callsign (3 letters + flight number), e.g. N-numbers.
   const isPrivate = (p) => !/^[A-Z]{3}\d/.test(p.callsign || "");
+  // Helicopters: broadcast category A7. Some don't send a category, so common helicopter
+  // type codes are recognised as a fallback.
+  const HELI_TYPES = new Set(["R22", "R44", "R66", "B06", "B206", "B407", "B412", "B429", "B505", "EC20", "EC25", "EC30",
+    "EC35", "EC45", "EC55", "EC75", "AS50", "AS55", "AS65", "AS32", "H500", "H47", "H60", "S76", "S92", "A109", "A119",
+    "A139", "A169", "A189", "BK17", "MD52", "MD60", "MD90", "S300", "EN28", "EN48"]);
+  const isHelicopter = (p) => p.category === "A7" || (!p.category && HELI_TYPES.has(p.type));
+  // Small planes: categories A1 (light, under 15,500 lb) and A2 (small, up to 75,000 lb),
+  // e.g. Cessnas, Pipers, business jets and regional turboprops. Excludes helicopters.
+  const isSmallPlane = (p) => (p.category === "A1" || p.category === "A2") && !isHelicopter(p);
   function flightOk(p) {
     const f = cfg.flightFilter || "all";
     if (f === "all") return true;
     if (f === "private") return isPrivate(p);
     if (f === "airline") return !isPrivate(p);
+    if (f === "heli") return isHelicopter(p);
+    if (f === "small") return isSmallPlane(p);
     if (f.startsWith("type:")) return p.type === f.slice(5);
     return true;
   }
@@ -662,7 +674,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     const typeOpts = Object.keys(types).sort().map((t) => `<option value="type:${esc(t)}">${esc(t)} (${types[t]})</option>`).join("");
     const ff = $("flightFilter");
     if (document.activeElement !== ff) {
-      ff.innerHTML = `<option value="all">All flights</option><option value="private">Private only</option><option value="airline">Airlines only</option>` +
+      ff.innerHTML = `<option value="all">All flights</option><option value="private">Private only</option><option value="airline">Airlines only</option><option value="small">Small planes only</option><option value="heli">Helicopters only</option>` +
         (typeOpts ? `<optgroup label="Aircraft type">${typeOpts}</optgroup>` : "");
       ff.value = cur;
     }
@@ -707,8 +719,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     const sb = e.target.closest(".sort[data-sort]");
     if (sb) {
       const k = sb.dataset.sort;
-      if (cfg.sortKey === k) cfg.sortDir = cfg.sortDir === -1 ? 1 : -1;
-      else { cfg.sortKey = k; cfg.sortDir = 1; }
+      if (cfg.sortKey !== k) { cfg.sortKey = k; cfg.sortDir = 1; }    // 1st click: sort ▲
+      else if (cfg.sortDir !== -1) cfg.sortDir = -1;                     // 2nd click: reverse ▼
+      else { cfg.sortKey = null; cfg.sortDir = 1; }                      // 3rd click: no sorting
       saveCfg(); render();
       const again = document.querySelector(`.sort[data-sort="${k}"]`); if (again) again.focus();
       return;
