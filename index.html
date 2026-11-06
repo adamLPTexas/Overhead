@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.3">
+<meta name="version" content="2.4">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -140,6 +140,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .wall.emer{border-color:var(--red);box-shadow:inset 0 0 50px rgba(255,60,40,.35),0 0 0 2px var(--red)}
 .row.emer{background:rgba(255,122,107,.2)}
 .row.emer .cs{color:var(--red)}
+/* medical: same highlight treatment as emergencies, in green and steady (no flashing) */
+.med-banner{display:inline-block;font-family:var(--led);font-size:clamp(22px,6vw,30px);letter-spacing:.06em;color:#06210c;background:var(--green);border-radius:6px;padding:2px 10px;margin-bottom:8px;text-shadow:none;line-height:1.1}
+.wall.med{border-color:var(--green);box-shadow:inset 0 0 50px rgba(80,220,120,.25),0 0 0 2px var(--green)}
+.row.med{background:rgba(126,224,138,.16)}
+.row.med .cs{color:var(--green)}
 
 /* spot-it popup */
 .spot-dir{font-family:var(--led);font-size:clamp(36px,10vw,48px);color:var(--amber);line-height:1;text-shadow:0 0 6px currentColor}
@@ -476,6 +481,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   // medical teams). ATC calls them "MEDEVAC"; the transponder status is still named "lifeguard".
   // Routine, not distress, so they get a calm badge instead of the red emergency treatment.
   const isMedical = (a) => a.emergency === "lifeguard";
+  // Display order: emergencies first, then medical flights (if shown), then everything else.
+  const showMed = () => cfg.showMedical !== false;
+  const priority = (p) => (p.emer ? 0 : p.medical && showMed() ? 1 : 2);
 
   // Emitter category broadcast by the plane itself (DO-260B)
   const CLASSES = { A1: "Light", A2: "Small", A3: "Large", A4: "Large (757)", A5: "Heavy", A6: "High performance",
@@ -513,7 +521,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       .filter((p) => p.dist <= radiusNm()) // nothing past your radius
       .filter((p) => cfg.ground === "show" || p.alt !== "ground")
       .filter((p) => p.alt === "ground" || p.alt == null || p.alt <= cfg.maxAlt)
-      .sort((a, b) => (b.emer ? 1 : 0) - (a.emer ? 1 : 0) || a.dist - b.dist); // emergencies first
+      .sort((a, b) => priority(a) - priority(b) || a.dist - b.dist); // emergencies, then medical, then nearest
   }
 
   // ---- extra details ----
@@ -565,7 +573,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function renderWall(p) {
     const wall = $("wall");
     if (!p) {
-      wall.classList.remove("emer");
+      wall.classList.remove("emer", "med");
       wall.innerHTML = hiddenCount
         ? `<div class="led empty">ALL FILTERED<small>${hiddenCount} plane${hiddenCount === 1 ? " is" : "s are"} in range but hidden by your filters. Change the Flights or Distance filter, or "Planes without a route" in Settings.</small></div>`
         : `<div class="led empty">CLEAR SKIES<small>No aircraft within ${radiusLabel()} right now. Try a bigger radius in Settings.</small></div>`;
@@ -585,12 +593,13 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     const prog = cfg.showProgress !== false ? progressOf(p, rc) : null;
     const names = cfg.airportNames === "names";
     wall.classList.toggle("emer", Boolean(p.emer));
+    wall.classList.toggle("med", Boolean(!p.emer && p.medical && showMed()));
     wall.innerHTML = `
-      ${p.emer ? `<div class="emer-banner">⚠ ${esc(p.emer)}</div>` : ""}
+      ${p.emer ? `<div class="emer-banner">⚠ ${esc(p.emer)}</div>` : p.medical && showMed() ? `<div class="med-banner">✚ MEDICAL FLIGHT</div>` : ""}
       <div class="w-top">
         <div style="min-width:0">
           <div class="led callsign">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div>
-          <div class="led airline">${esc(airlineFor(p.callsign, p.reg))}${cls ? `<span class="badge">${esc(cls)}</span>` : ""}${p.medical && cfg.showMedical !== false ? `<span class="badge med">Medical</span>` : ""}</div>
+          <div class="led airline">${esc(airlineFor(p.callsign, p.reg))}${cls ? `<span class="badge">${esc(cls)}</span>` : ""}</div>
         </div>
         <div class="compass" title="Plane is ${compass8(p.brg)} of you">${compassSvg(p.track, p.brg)}</div>
       </div>
@@ -622,8 +631,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const orig = route ? route[0] : null;
       const subLine = [airlineFor(p.callsign, p.reg), p.type, cfg.showClass !== false && CLASSES[p.category]].filter(Boolean).join(" · ");
       const a = altStr(p.alt), d = dstStr(p.dist);
-      return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
-        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${p.medical && cfg.showMedical !== false ? `<span class="med">Medical</span> · ` : ""}${esc(subLine)}</div></div>
+      return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer" : p.medical && showMed() ? " med" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
+        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${p.medical && showMed() ? `<span class="med">Medical</span> · ` : ""}${esc(subLine)}</div></div>
         <div class="orig${orig ? "" : " na"}">${orig ? esc(orig) : "—"}</div>
         <div class="dest${dest ? "" : " na"}">${dest ? esc(dest) : (rc && rc.pending ? "…" : "—")}</div>
         <div class="num">${a.v}</div>
@@ -634,7 +643,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   // ---- sorting (column headers) ----
   // Click a header to sort by it, click again to reverse, click a third time to clear sorting
-  // (back to the default: nearest first, no arrow). Emergencies always stay on top.
+  // (back to the default: nearest first, no arrow). Emergencies, then medical flights, always stay on top.
   const SORTS = {
     flight: { label: "Flight", get: (p) => p.callsign || p.reg || p.hex.toUpperCase(), text: true },
     from:   { label: "From", get: (p) => { const r = routeCache.get(p.callsign); return r && r.route && r.route[0]; }, text: true },
@@ -645,7 +654,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function sortPlanes(planes) {
     const key = SORTS[cfg.sortKey] ? cfg.sortKey : "dist", dir = SORTS[cfg.sortKey] && cfg.sortDir === -1 ? -1 : 1, s = SORTS[key];
     return planes.slice().sort((a, b) => {
-      if (Boolean(a.emer) !== Boolean(b.emer)) return a.emer ? -1 : 1;
+      if (priority(a) !== priority(b)) return priority(a) - priority(b); // emergency, medical, then the rest
       const va = s.get(a), vb = s.get(b);
       const na = va == null || va === "", nb = vb == null || vb === "";
       if (na || nb) return na && nb ? a.dist - b.dist : na ? 1 : -1; // unknowns always last
@@ -728,9 +737,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     return mode === "both" ? Boolean(o || d) : Boolean(o && d);
   }
   function visiblePlanes() {
-    // emergencies are never hidden by any filter
-    const v = lastPlanes.filter((p) => p.emer || (routeOk(p) && flightOk(p) && distOk(p)));
-    hiddenCount = lastPlanes.length - v.length;
+    // Emergencies are never hidden. Medical flights are never hidden by the filters either,
+    // but turning off "Medical flight" in Settings removes them completely (not counted).
+    // An emergency that is also a medical flight is still always shown.
+    const pool = lastPlanes.filter((p) => p.emer || !p.medical || showMed());
+    const v = pool.filter((p) => p.emer || (p.medical && showMed()) || (routeOk(p) && flightOk(p) && distOk(p)));
+    hiddenCount = pool.length - v.length;
     return v;
   }
 
