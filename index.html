@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="1.5">
+<meta name="version" content="1.8">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -88,10 +88,19 @@ button{font:inherit;color:inherit;cursor:pointer}
 .row .dest{font-family:var(--led);font-size:22px;color:var(--cyan);line-height:1;text-align:center}
 .row .orig.na{color:var(--muted);font-size:16px}
 .row .dest.na{color:var(--muted);font-size:16px}
-.row.colhead{padding-top:8px;padding-bottom:8px;font-size:10px;letter-spacing:.04em;white-space:nowrap;text-transform:uppercase;color:var(--muted);cursor:default}
-.row.colhead > div:nth-child(2),.row.colhead > div:nth-child(3){text-align:center}
+.row.colhead{padding-top:4px;padding-bottom:4px;font-size:10px;letter-spacing:.04em;white-space:nowrap;text-transform:uppercase;color:var(--muted);cursor:default}
+.row.colhead .sort{all:unset;box-sizing:border-box;display:block;width:100%;padding:6px 0;cursor:pointer;color:var(--muted);font:inherit;letter-spacing:inherit;text-transform:inherit}
+.row.colhead .sort:hover{color:var(--fg)}
+.row.colhead .sort:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.row.colhead .sort.on{color:var(--fg)}
+.row.colhead .sort .ar{color:var(--amber)}
+.row.colhead > div:nth-child(2) .sort,.row.colhead > div:nth-child(3) .sort{text-align:center}
+.row.colhead > div:nth-child(n+4) .sort{text-align:right}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);min-width:0}
+.filters select{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:15px;letter-spacing:0;text-transform:none;width:100%;min-width:0}
 .row .orig{font-family:var(--led);font-size:22px;color:var(--fg);opacity:.75;line-height:1;text-align:center}
-.row.colhead > div:nth-child(n+4){text-align:right}
+
 .foot{font-size:12px;color:var(--muted);line-height:1.5;padding:0 2px}
 .foot a{color:var(--cyan)}
 
@@ -114,6 +123,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
 /* extra display details */
 .badge{display:inline-block;font-family:var(--ui);font-size:11px;letter-spacing:.12em;text-transform:uppercase;border:1px solid currentColor;color:var(--cyan);border-radius:4px;padding:2px 6px;text-shadow:none;vertical-align:middle;margin-left:8px;line-height:1.2}
+.badge.med{color:var(--green)}
+.row .sub .med{color:var(--green);font-weight:600}
 .next{font-size:clamp(20px,5.5vw,26px);color:var(--green);margin-top:4px}
 .route.names{font-size:clamp(24px,6.5vw,36px);flex-direction:column;align-items:flex-start;gap:10px}
 .route.names .arrow{display:none}
@@ -163,6 +174,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   </section>
 
   <div class="listhead"><span id="countLabel">In range</span><span id="rangeLabel"></span></div>
+  <div class="filters">
+    <label for="flightFilter">Flights<select id="flightFilter"></select></label>
+    <label for="distFilter">Distance<select id="distFilter"></select></label>
+  </div>
   <div class="list" id="list"></div>
 
   <p class="foot">Live ADS-B data from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a>. Routes from <a href="https://www.adsbdb.com" target="_blank" rel="noopener">adsbdb</a>, looked up by callsign and can be wrong. Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky. <span id="ver"></span></p>
@@ -184,7 +199,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     </div>
     <div class="two">
       <div class="field"><label for="radius">Radius</label>
-        <select id="radius"><option value="5">5 nm</option><option value="10">10 nm</option><option value="15">15 nm</option><option value="25">25 nm</option><option value="50">50 nm</option></select>
+        <select id="radius"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="25">25</option><option value="50">50</option></select>
       </div>
       <div class="field"><label for="maxAlt">Max altitude</label>
         <select id="maxAlt"><option value="99999">Any</option><option value="40000">40,000 ft</option><option value="20000">20,000 ft</option><option value="10000">10,000 ft</option><option value="5000">5,000 ft</option></select>
@@ -206,6 +221,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <label class="check"><input type="checkbox" id="showNext"> Where it's headed next</label>
       <label class="check"><input type="checkbox" id="showProgress"> Flight progress</label>
       <label class="check"><input type="checkbox" id="showModel"> Manufacturer &amp; model</label>
+      <label class="check"><input type="checkbox" id="showMedical"> Medical flight badge</label>
     </div>
     <div class="field"><label for="airportNames">Airports</label>
       <select id="airportNames"><option value="codes">Codes (ORD → DFW)</option><option value="names">City names (Chicago → Dallas-Fort Worth)</option></select>
@@ -235,7 +251,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   // ---- settings ----
   const defaults = { lat: null, lon: null, useGps: true, radius: 10, maxAlt: 99999, units: "imperial", ground: "hide", routeFilter: "all",
-    showClass: true, showNext: true, showProgress: true, showModel: true, airportNames: "codes" };
+    showClass: true, showNext: true, showProgress: true, showModel: true, showMedical: true, airportNames: "codes",
+    sortKey: "dist", sortDir: 1, flightFilter: "all", distStep: 5 };
   let cfg = { ...defaults };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("overhead.cfg") || "{}")); } catch (e) {}
   const saveCfg = () => { try { localStorage.setItem("overhead.cfg", JSON.stringify(cfg)); } catch (e) {} };
@@ -299,6 +316,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     const v = cfg.units === "metric" ? nm * 1.852 : cfg.units === "aviation" ? nm : nm * 1.15078;
     return { v: v < 10 ? v.toFixed(1) : fmt(v), u: cfg.units === "metric" ? "km" : cfg.units === "aviation" ? "nm" : "mi" };
   }
+  // The radius setting is in the units you've chosen (mi, nm or km); data sources work in nm.
+  const nmToUnits = () => (cfg.units === "metric" ? 1.852 : cfg.units === "aviation" ? 1 : 1.15078);
+  const radiusNm = () => cfg.radius / nmToUnits();
+  const radiusLabel = () => `${cfg.radius} ${dstStr(1).u}`;
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
   // ---- status ----
@@ -319,7 +340,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   }
   async function fetchPlanes() {
     const { lat, lon } = here;
-    const r = Math.min(250, cfg.radius);
+    const r = Math.min(250, Math.ceil(radiusNm()));
     const q = `${lat.toFixed(4)}/${lon.toFixed(4)}/${r}`;
     // On the hosted site, /adsblol and /apl are same-site relays (see _redirects),
     // which avoids the browser's cross-site block. Direct URLs are a last resort.
@@ -421,6 +442,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     return null;
   }
 
+  // Medical ("lifeguard") flights: air ambulances on urgent trips (patients, transplant organs,
+  // medical teams). ATC calls them "MEDEVAC"; the transponder status is still named "lifeguard".
+  // Routine, not distress, so they get a calm badge instead of the red emergency treatment.
+  const isMedical = (a) => a.emergency === "lifeguard";
+
   // Emitter category broadcast by the plane itself (DO-260B)
   const CLASSES = { A1: "Light", A2: "Small", A3: "Large", A4: "Large (757)", A5: "Heavy", A6: "High performance",
     A7: "Helicopter", B1: "Glider", B2: "Balloon", B3: "Parachutist", B4: "Ultralight", B6: "Drone", B7: "Space vehicle",
@@ -448,12 +474,13 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
           navAlt: a.nav_altitude_mcp ?? a.nav_altitude_fms ?? null, // autopilot target altitude
           navHdg: a.nav_heading ?? null,                             // autopilot target heading
           emer: emergencyOf(a),
+          medical: isMedical(a),
           lat: a.lat, lon: a.lon,
           dist: d,
           brg: bearing(here, pos),
         };
       })
-      .filter((p) => p.dist <= cfg.radius + 0.5)
+      .filter((p) => p.dist <= radiusNm()) // nothing past your radius
       .filter((p) => cfg.ground === "show" || p.alt !== "ground")
       .filter((p) => p.alt === "ground" || p.alt == null || p.alt <= cfg.maxAlt)
       .sort((a, b) => (b.emer ? 1 : 0) - (a.emer ? 1 : 0) || a.dist - b.dist); // emergencies first
@@ -510,8 +537,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (!p) {
       wall.classList.remove("emer");
       wall.innerHTML = hiddenCount
-        ? `<div class="led empty">NO ROUTED FLIGHTS<small>${hiddenCount} plane${hiddenCount === 1 ? "" : "s"} in range without a known route ${hiddenCount === 1 ? "is" : "are"} hidden. Change "Planes without a route" in Settings to see ${hiddenCount === 1 ? "it" : "them"}.</small></div>`
-        : `<div class="led empty">CLEAR SKIES<small>No aircraft within ${cfg.radius} nm right now. Try a bigger radius in Settings.</small></div>`;
+        ? `<div class="led empty">ALL FILTERED<small>${hiddenCount} plane${hiddenCount === 1 ? " is" : "s are"} in range but hidden by your filters. Change the Flights or Distance filter, or "Planes without a route" in Settings.</small></div>`
+        : `<div class="led empty">CLEAR SKIES<small>No aircraft within ${radiusLabel()} right now. Try a bigger radius in Settings.</small></div>`;
       return;
     }
     const rc = routeCache.get(p.callsign);
@@ -533,7 +560,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <div class="w-top">
         <div style="min-width:0">
           <div class="led callsign">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div>
-          <div class="led airline">${esc(airlineFor(p.callsign, p.reg))}${cls ? `<span class="badge">${esc(cls)}</span>` : ""}</div>
+          <div class="led airline">${esc(airlineFor(p.callsign, p.reg))}${cls ? `<span class="badge">${esc(cls)}</span>` : ""}${p.medical && cfg.showMedical !== false ? `<span class="badge med">Medical</span>` : ""}</div>
         </div>
         <div class="compass" title="Plane is ${compass8(p.brg)} of you">${compassSvg(p.track, p.brg)}</div>
       </div>
@@ -554,11 +581,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   function renderList(planes, selHex) {
     const list = $("list");
-    $("countLabel").textContent = `${planes.length} in range` + (hiddenCount ? ` · ${hiddenCount} hidden` : "");
-    $("rangeLabel").textContent = `${cfg.radius} nm radius`;
+    $("countLabel").textContent = hiddenCount ? `${planes.length} of ${planes.length + hiddenCount} shown` : `${planes.length} in range`;
+    $("rangeLabel").textContent = `${radiusLabel()} radius`;
     if (!planes.length) { list.innerHTML = ""; list.hidden = true; return; }
     list.hidden = false;
-    list.innerHTML = `<div class="row colhead" aria-hidden="true"><div>Flight</div><div>From</div><div>To</div><div>Alt ${altStr(0).u}</div><div>${dstStr(1).u}</div></div>` + planes.map((p) => {
+    list.innerHTML = headerHtml() + sortPlanes(planes).map((p) => {
       const rc = routeCache.get(p.callsign);
       const route = rc && rc.route;
       const dest = route ? route[1] : null;
@@ -566,7 +593,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const subLine = [airlineFor(p.callsign, p.reg), p.type, cfg.showClass !== false && CLASSES[p.category]].filter(Boolean).join(" · ");
       const a = altStr(p.alt), d = dstStr(p.dist);
       return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
-        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${esc(subLine)}</div></div>
+        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${p.medical && cfg.showMedical !== false ? `<span class="med">Medical</span> · ` : ""}${esc(subLine)}</div></div>
         <div class="orig${orig ? "" : " na"}">${orig ? esc(orig) : "—"}</div>
         <div class="dest${dest ? "" : " na"}">${dest ? esc(dest) : (rc && rc.pending ? "…" : "—")}</div>
         <div class="num">${a.v}</div>
@@ -574,6 +601,79 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       </button>`;
     }).join("");
   }
+
+  // ---- sorting (column headers) ----
+  // Click a header to sort by it; click again to reverse. Emergencies always stay on top.
+  const SORTS = {
+    flight: { label: "Flight", get: (p) => p.callsign || p.reg || p.hex.toUpperCase(), text: true },
+    from:   { label: "From", get: (p) => { const r = routeCache.get(p.callsign); return r && r.route && r.route[0]; }, text: true },
+    to:     { label: "To", get: (p) => { const r = routeCache.get(p.callsign); return r && r.route && r.route[1]; }, text: true },
+    alt:    { label: "Alt", get: (p) => (p.alt === "ground" ? 0 : (typeof p.alt === "number" ? p.alt : null)) },
+    dist:   { label: "Dist", get: (p) => p.dist },
+  };
+  function sortPlanes(planes) {
+    const key = SORTS[cfg.sortKey] ? cfg.sortKey : "dist", dir = cfg.sortDir === -1 ? -1 : 1, s = SORTS[key];
+    return planes.slice().sort((a, b) => {
+      if (Boolean(a.emer) !== Boolean(b.emer)) return a.emer ? -1 : 1;
+      const va = s.get(a), vb = s.get(b);
+      const na = va == null || va === "", nb = vb == null || vb === "";
+      if (na || nb) return na && nb ? a.dist - b.dist : na ? 1 : -1; // unknowns always last
+      const c = s.text ? String(va).localeCompare(String(vb)) : va - vb;
+      return c * dir || a.dist - b.dist;
+    });
+  }
+  function headerHtml() {
+    const cell = (key, label) => {
+      const on = (cfg.sortKey || "dist") === key, dir = cfg.sortDir === -1 ? -1 : 1;
+      const ar = on ? `<span class="ar">${dir === 1 ? "▲" : "▼"}</span>` : "";
+      return `<div><button type="button" class="sort${on ? " on" : ""}" data-sort="${key}" aria-label="Sort by ${label}${on ? (dir === 1 ? ", ascending" : ", descending") : ""}">${esc(label)}${ar}</button></div>`;
+    };
+    return `<div class="row colhead">${cell("flight", "Flight")}${cell("from", "From")}${cell("to", "To")}${cell("alt", "Alt " + altStr(0).u)}${cell("dist", dstStr(1).u)}</div>`;
+  }
+
+  // ---- list filters ----
+  // Flights: all / private / airline / one aircraft type (types offered are the ones in range now).
+  // "Private" means no airline-style callsign (3 letters + flight number), e.g. N-numbers.
+  const isPrivate = (p) => !/^[A-Z]{3}\d/.test(p.callsign || "");
+  function flightOk(p) {
+    const f = cfg.flightFilter || "all";
+    if (f === "all") return true;
+    if (f === "private") return isPrivate(p);
+    if (f === "airline") return !isPrivate(p);
+    if (f.startsWith("type:")) return p.type === f.slice(5);
+    return true;
+  }
+  // Distance: your radius split into 5 equal whole-number steps (15 mi -> 3, 6, 9, 12, 15).
+  // The last step is your full radius, so the filter never offers more than you're watching.
+  const stepValue = (i) => Math.max(1, Math.round(cfg.radius * i / 5));
+  function distSteps() {
+    const u = dstStr(1).u;
+    return [1, 2, 3, 4, 5].map((i) => ({ i, label: `Within ${stepValue(i)} ${u}` }));
+  }
+  function distOk(p) {
+    const step = Math.min(5, Math.max(1, cfg.distStep | 0 || 5));
+    return step === 5 || p.dist <= stepValue(step) / nmToUnits();
+  }
+  function fillFilters() {
+    const types = {};
+    lastPlanes.forEach((p) => { if (p.type) types[p.type] = (types[p.type] || 0) + 1; });
+    const cur = cfg.flightFilter || "all";
+    if (cur.startsWith("type:") && !types[cur.slice(5)]) types[cur.slice(5)] = 0; // keep a chosen type listed
+    const typeOpts = Object.keys(types).sort().map((t) => `<option value="type:${esc(t)}">${esc(t)} (${types[t]})</option>`).join("");
+    const ff = $("flightFilter");
+    if (document.activeElement !== ff) {
+      ff.innerHTML = `<option value="all">All flights</option><option value="private">Private only</option><option value="airline">Airlines only</option>` +
+        (typeOpts ? `<optgroup label="Aircraft type">${typeOpts}</optgroup>` : "");
+      ff.value = cur;
+    }
+    const df = $("distFilter");
+    if (document.activeElement !== df) {
+      df.innerHTML = distSteps().map((s) => `<option value="${s.i}">${s.i === 5 ? s.label + " (all)" : s.label}</option>`).join("");
+      df.value = String(Math.min(5, Math.max(1, cfg.distStep | 0 || 5)));
+    }
+  }
+  $("flightFilter").addEventListener("change", (e) => { cfg.flightFilter = e.target.value; saveCfg(); e.target.blur(); render(); });
+  $("distFilter").addEventListener("change", (e) => { cfg.distStep = +e.target.value; saveCfg(); e.target.blur(); render(); });
 
   // Route filter is applied at render time, because routes arrive after the planes do.
   let hiddenCount = 0;
@@ -586,12 +686,14 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     return mode === "both" ? Boolean(o || d) : Boolean(o && d);
   }
   function visiblePlanes() {
-    const v = lastPlanes.filter(routeOk);
+    // emergencies are never hidden by any filter
+    const v = lastPlanes.filter((p) => p.emer || (routeOk(p) && flightOk(p) && distOk(p)));
     hiddenCount = lastPlanes.length - v.length;
     return v;
   }
 
   function render() {
+    fillFilters();
     const planes = visiblePlanes();
     // an emergency takes over the big display; otherwise the tapped plane, otherwise the nearest
     let sel = planes.find((p) => p.emer) || planes.find((p) => p.hex === pinnedHex);
@@ -602,6 +704,15 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   }
 
   $("list").addEventListener("click", (e) => {
+    const sb = e.target.closest(".sort[data-sort]");
+    if (sb) {
+      const k = sb.dataset.sort;
+      if (cfg.sortKey === k) cfg.sortDir = cfg.sortDir === -1 ? 1 : -1;
+      else { cfg.sortKey = k; cfg.sortDir = 1; }
+      saveCfg(); render();
+      const again = document.querySelector(`.sort[data-sort="${k}"]`); if (again) again.focus();
+      return;
+    }
     const row = e.target.closest(".row[data-hex]");
     if (!row) return;
     if (suppressClick) { suppressClick = false; return; } // that was a long-press
@@ -783,11 +894,18 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   function fillForm() {
     $("lat").value = cfg.lat ?? ""; $("lon").value = cfg.lon ?? "";
     $("radius").value = String(cfg.radius); $("maxAlt").value = String(cfg.maxAlt);
+    labelRadiusOptions();
     $("units").value = cfg.units; $("ground").value = cfg.ground; $("routeFilter").value = cfg.routeFilter || "all";
-    ["showClass", "showNext", "showProgress", "showModel"].forEach((k) => { $(k).checked = cfg[k] !== false; });
+    ["showClass", "showNext", "showProgress", "showModel", "showMedical"].forEach((k) => { $(k).checked = cfg[k] !== false; });
     $("airportNames").value = cfg.airportNames || "codes";
     $("locNote").textContent = "Manual coordinates are used when location access isn't available.";
   }
+  // radius choices are shown in whichever units are picked in the same dialog
+  function labelRadiusOptions() {
+    const u = { imperial: "mi", aviation: "nm", metric: "km" }[$("units").value] || "mi";
+    [...$("radius").options].forEach((o) => { o.textContent = `${o.value} ${u}`; });
+  }
+  $("units").addEventListener("change", labelRadiusOptions);
   $("openSettings").addEventListener("click", () => { fillForm(); dlg.showModal(); });
   $("useGps").addEventListener("click", () => {
     $("locNote").textContent = "Finding you…";
@@ -804,7 +922,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     }
     cfg.radius = +$("radius").value; cfg.maxAlt = +$("maxAlt").value;
     cfg.units = $("units").value; cfg.ground = $("ground").value; cfg.routeFilter = $("routeFilter").value;
-    ["showClass", "showNext", "showProgress", "showModel"].forEach((k) => { cfg[k] = $(k).checked; });
+    ["showClass", "showNext", "showProgress", "showModel", "showMedical"].forEach((k) => { cfg[k] = $(k).checked; });
     cfg.airportNames = $("airportNames").value;
     saveCfg();
     if (here) start();
