@@ -248,9 +248,16 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   async function fetchPlanes() {
     const { lat, lon } = here;
     const r = Math.min(250, cfg.radius);
-    const sources = [
-      ["adsb.lol", `https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/${r}`],
-      ["airplanes.live", `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/${r}`],
+    const q = `${lat.toFixed(4)}/${lon.toFixed(4)}/${r}`;
+    // On the hosted site, /adsblol and /apl are same-site relays (see _redirects),
+    // which avoids the browser's cross-site block. Direct URLs are a last resort.
+    const sources = location.protocol.startsWith("http") ? [
+      ["adsb.lol", `/adsblol/v2/point/${q}`],
+      ["airplanes.live", `/apl/v2/point/${q}`],
+      ["adsb.lol", `https://api.adsb.lol/v2/point/${q}`],
+    ] : [
+      ["adsb.lol", `https://api.adsb.lol/v2/point/${q}`],
+      ["airplanes.live", `https://api.airplanes.live/v2/point/${q}`],
     ];
     let lastErr;
     for (const [name, url] of sources) {
@@ -267,7 +274,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (!need.length) return;
     need.forEach((p) => routeCache.set(p.callsign, { route: null, pending: true }));
     try {
-      const res = await fetchJson("https://api.adsb.lol/api/0/routeset", {
+      const res = await fetchJson(location.protocol.startsWith("http") ? "/adsblol/api/0/routeset" : "https://api.adsb.lol/api/0/routeset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planes: need.map((p) => ({ callsign: p.callsign, lat: p.lat, lng: p.lon })) }),
