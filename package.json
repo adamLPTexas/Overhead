@@ -1,0 +1,8 @@
+{
+  "name": "overhead",
+  "private": true,
+  "description": "Overhead flight display. Dependencies here are only for the Netlify log function.",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

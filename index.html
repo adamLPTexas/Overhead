@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.4">
+<meta name="version" content="2.5">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,6 +24,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--ui);-webkit-text-size-adjust:100%}
 body{
   min-height:100vh;
@@ -101,6 +102,23 @@ button{font:inherit;color:inherit;cursor:pointer}
 .filters select{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:15px;letter-spacing:0;text-transform:none;width:100%;min-width:0}
 .row .orig{font-family:var(--led);font-size:22px;color:var(--fg);opacity:.75;line-height:1;text-align:center}
 
+.sub-opt{padding-left:30px}
+.loglink{all:unset;cursor:pointer;color:var(--cyan);text-decoration:underline;margin-left:10px}
+.loglink:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+#logDlg{width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
+.log-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.log-tools select{background:#06080a;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:15px}
+.log-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.log-item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;padding:10px 12px;border-top:1px solid var(--line);font-size:14px;line-height:1.35}
+.log-item:first-child{border-top:0}
+.log-item .when{grid-column:1 / -1;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.log-item .pill{align-self:start;font-size:10px;letter-spacing:.12em;text-transform:uppercase;border-radius:4px;padding:3px 6px;font-weight:600;white-space:nowrap}
+.pill.emergency{background:var(--red);color:#fff}
+.pill.medical{background:var(--green);color:#06210c}
+.pill.error{background:#2a3138;color:var(--fg)}
+.log-item .what{min-width:0;overflow-wrap:anywhere}
+.log-item .what b{font-family:var(--led);font-weight:400;font-size:20px;color:var(--amber);margin-right:6px}
+.log-item .det{color:var(--muted);font-size:12px}
 .hint{font-size:12px;color:var(--muted);line-height:1.45;margin:-4px 2px 0}
 .foot{font-size:12px;color:var(--muted);line-height:1.5;padding:0 2px}
 .foot a{color:var(--cyan)}
@@ -189,7 +207,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   <!-- Data sources: live ADS-B positions from adsb.lol (https://adsb.lol).
        Routes from adsbdb (https://www.adsbdb.com), looked up by callsign, so they can be wrong. -->
-  <p class="foot"><span id="ver"></span></p>
+  <p class="foot"><span id="ver"></span><button type="button" class="loglink" id="openLog">Log</button></p>
 </div>
 
 <dialog id="settings">
@@ -219,6 +237,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     </div>
     <div class="field">
       <label class="check"><input type="checkbox" id="saveBattery"> Save mobile battery</label>
+      <label class="check sub-opt" id="keepScreenRow"><input type="checkbox" id="keepScreenOn"> Keep screen on</label>
       <p class="note" id="batteryNote"></p>
     </div>
     <div class="field"><label for="ground">Planes on the ground</label>
@@ -244,6 +263,24 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <button class="btn primary" value="save" id="saveBtn" type="submit">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="logDlg" aria-labelledby="logTitle">
+  <div class="sheet">
+    <h2 id="logTitle">LOG</h2>
+    <div class="log-tools">
+      <select id="logDays" aria-label="How far back">
+        <option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="31">Last 31 days</option>
+      </select>
+      <select id="logType" aria-label="Which entries">
+        <option value="all">Everything</option><option value="emergency">Emergencies</option><option value="medical">Medical flights</option><option value="error">Errors</option>
+      </select>
+    </div>
+    <div id="logBody"></div>
+    <div class="btnrow" style="justify-content:flex-end">
+      <button class="btn primary" id="logClose" type="button">Close</button>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="spot" aria-labelledby="spotTitle">
@@ -286,7 +323,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 
   // ---- settings ----
   const defaults = { lat: null, lon: null, useGps: true, radius: 10, maxAlt: 99999, units: "imperial", ground: "hide", routeFilter: "all",
-    showClass: true, showNext: true, showProgress: true, showModel: true, showMedical: true, airportNames: "codes", saveBattery: false,
+    showClass: true, showNext: true, showProgress: true, showModel: true, showMedical: true, airportNames: "codes", saveBattery: false, keepScreenOn: false,
     sortKey: null, sortDir: 1, flightFilter: "all", distStep: 5 };
   let cfg = { ...defaults };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("overhead.cfg") || "{}")); } catch (e) {}
@@ -413,6 +450,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const oc = o && o.code, dc = d && d.code;
       return { route: oc || dc ? [oc || null, dc || null] : null, o, d };
     } catch (e) {
+      logError("adsbdb routes", e);
       return null; // network hiccup: try again next cycle
     }
   }
@@ -437,6 +475,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const model = [a.manufacturer, a.type].filter(Boolean).join(" ");
       return { model: model || null };
     } catch (e) {
+      logError("adsbdb aircraft", e);
       return null;
     }
   }
@@ -777,6 +816,89 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
+  // ---- Activity log ---------------------------------------------------------------------
+  // Emergency and medical flights, and failed data fetches, are sent to the site's log
+  // (netlify/functions/log.mjs, stored in Netlify Blobs). The server adds the timestamp and
+  // keeps one entry per aircraft, per code, per day. Nothing about the viewer is sent:
+  // no location, no settings, no identifiers. Logging only runs on the hosted site.
+  const LOG_URL = "/api/log";
+  const canLog = () => location.protocol.startsWith("http");
+  const APP_VERSION = (document.querySelector('meta[name="version"]') || {}).content || "";
+  function sendLog(entry) {
+    if (!canLog()) return;
+    try {
+      fetch(LOG_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry), keepalive: true })
+        .catch(() => {}); // a failed log write is never itself logged (avoids loops)
+    } catch (e) {}
+  }
+  const loggedSightings = new Set(); // per page load, so each sighting is sent once
+  function logSightings() {
+    for (const p of lastPlanes) {
+      if (!p.emer && !p.medical) continue;
+      if (!p.hex || p.hex.startsWith("~")) continue; // ?debug test planes are never logged
+      const type = p.emer ? "emergency" : "medical";
+      const key = `${type}:${p.hex}:${p.squawk || ""}`;
+      if (loggedSightings.has(key)) continue;
+      loggedSightings.add(key);
+      const rc = routeCache.get(p.callsign), mc = modelCache.get(p.hex);
+      sendLog({
+        type,
+        label: p.emer || "MEDICAL",
+        flight: {
+          hex: p.hex, callsign: p.callsign || null, reg: p.reg || null,
+          aircraft: (mc && mc.model) || p.desc || p.type || null,
+          squawk: p.squawk || null,
+          alt: p.alt === "ground" ? 0 : p.alt, gs: p.gs, track: p.track, lat: p.lat, lon: p.lon,
+          from: rc && rc.route ? rc.route[0] : null, to: rc && rc.route ? rc.route[1] : null,
+        },
+      });
+    }
+  }
+  const lastErrorLog = {}; // source -> time, so an outage logs at most once per 5 minutes per source
+  function logError(source, err) {
+    const now = Date.now();
+    if (lastErrorLog[source] && now - lastErrorLog[source] < 5 * 60 * 1000) return;
+    if (navigator.onLine === false) return; // the device itself is offline; nothing to report
+    lastErrorLog[source] = now;
+    const message = err && err.name === "AbortError" ? "Timed out after 8 seconds" : String((err && err.message) || err || "Unknown error");
+    sendLog({ type: "error", source, message, version: APP_VERSION });
+  }
+
+  // log viewer
+  const logDlg = $("logDlg");
+  async function loadLog() {
+    const body = $("logBody");
+    if (!canLog()) { body.innerHTML = `<p class="note">The log is only available on the hosted site.</p>`; return; }
+    body.innerHTML = `<p class="note">Loading…</p>`;
+    try {
+      const r = await fetch(`${LOG_URL}?days=${$("logDays").value}`, { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const want = $("logType").value;
+      const entries = ((await r.json()).entries || []).filter((e) => want === "all" || e.type === want);
+      if (!entries.length) { body.innerHTML = `<p class="note">Nothing logged for this period.</p>`; return; }
+      body.innerHTML = `<div class="log-list">${entries.map((e) => {
+        const when = new Date(e.time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+        if (e.type === "error") {
+          return `<div class="log-item"><span class="when">${esc(when)}</span><span class="pill error">Error</span>
+            <span class="what">${esc(e.source || "")}: ${esc(e.message || "")}<span class="det">${e.version ? ` · v${esc(e.version)}` : ""}</span></span></div>`;
+        }
+        const a = altStr(e.alt), sp = spdStr(e.speed_kt);
+        const det = [e.aircraft, e.reg, e.from || e.to ? `${e.from || "—"} → ${e.to || "—"}` : null,
+          e.alt != null ? `${a.v} ${a.u}` : null, e.speed_kt != null ? `${sp.v} ${sp.u}` : null,
+          e.lat != null ? `${e.lat.toFixed(3)}, ${e.lon.toFixed(3)}` : null].filter(Boolean).map(esc).join(" · ");
+        return `<div class="log-item"><span class="when">${esc(when)}</span><span class="pill ${e.type}">${e.type === "medical" ? "Medical" : "Emergency"}</span>
+          <span class="what"><b>${esc(e.callsign || e.reg || e.hex || "")}</b>${esc(e.label || "")}<br><span class="det">${det}</span></span></div>`;
+      }).join("")}</div>`;
+    } catch (err) {
+      body.innerHTML = `<p class="note">Couldn't load the log (${esc(err.message)}). Check your connection and try again.</p>`;
+    }
+  }
+  $("openLog").addEventListener("click", () => { logDlg.showModal(); loadLog(); });
+  $("logDays").addEventListener("change", loadLog);
+  $("logType").addEventListener("change", loadLog);
+  $("logClose").addEventListener("click", () => logDlg.close());
+  logDlg.addEventListener("click", (e) => { if (e.target === logDlg) logDlg.close(); });
+
   // ---- "Spot it": where to look in the sky -------------------------------------------
   // Positions are projected forward from the last update using speed and track, so the
   // popup keeps moving between the 10-second data refreshes.
@@ -948,9 +1070,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       render();
       const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
       setStatus(`Live · ${name} · ${t} · ${refreshLabel()}${DEBUG_FAKES ? " · test planes on" : ""}`, "live");
-      fetchRoutes(lastPlanes).then(render);
+      // log emergency/medical sightings once their route lookup has had a chance to finish
+      fetchRoutes(lastPlanes).then(() => { render(); logSightings(); });
       fetchModels(visiblePlanes()).then(render);
     } catch (e) {
+      logError("adsb.lol", e);
       setStatus("Can't reach flight data · retrying", "err");
     } finally { busy = false; }
   }
@@ -962,10 +1086,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { tick(); keepAwake(); } });
 
   // keep the screen on while open (nice for a propped-up phone "wall"),
-  // except in battery-saver mode, where the screen is allowed to turn off normally
+  // except in battery-saver mode, where the screen turns off normally unless "Keep screen on" is ticked
   let wakeLock = null;
   async function keepAwake() {
-    if (cfg.saveBattery) { try { if (wakeLock) await wakeLock.release(); } catch (e) {} wakeLock = null; return; }
+    if (cfg.saveBattery && !cfg.keepScreenOn) { try { if (wakeLock) await wakeLock.release(); } catch (e) {} wakeLock = null; return; }
     try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch (e) {}
   }
 
@@ -1004,6 +1128,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     ["showClass", "showNext", "showProgress", "showModel", "showMedical"].forEach((k) => { $(k).checked = cfg[k] !== false; });
     $("airportNames").value = cfg.airportNames || "codes";
     $("saveBattery").checked = Boolean(cfg.saveBattery);
+    $("keepScreenOn").checked = Boolean(cfg.keepScreenOn);
     batteryNote();
     $("locNote").textContent = "Manual coordinates are used when location access isn't available.";
   }
@@ -1015,16 +1140,19 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   $("units").addEventListener("change", labelRadiusOptions);
   // tell the user exactly what the battery switch changes, before they save
   function batteryNote() {
+    const on = $("saveBattery").checked, keep = $("keepScreenOn").checked;
+    $("keepScreenRow").hidden = !on; // "Keep screen on" only matters in battery-saver mode
+    const screen = keep ? " The screen stays on." : " The screen can turn off normally.";
     if (URL_REFRESH_S) {
-      $("batteryNote").textContent = `This link sets updates to ${refreshLabel().replace(" (set by link)", "")}, which overrides this setting's update rate.` +
-        ($("saveBattery").checked ? " The screen can still turn off normally." : "");
+      $("batteryNote").textContent = `This link sets updates to ${refreshLabel().replace(" (set by link)", "")}, which overrides this setting's update rate.` + (on ? screen : "");
       return;
     }
-    $("batteryNote").textContent = $("saveBattery").checked
-      ? "On: updates every 2 minutes instead of every 30 seconds, and the screen can turn off normally."
+    $("batteryNote").textContent = on
+      ? "On: updates every 2 minutes instead of every 30 seconds." + screen
       : "Off: updates every 30 seconds. Turn on to update every 2 minutes instead and let the screen turn off normally.";
   }
   $("saveBattery").addEventListener("change", batteryNote);
+  $("keepScreenOn").addEventListener("change", batteryNote);
   $("openSettings").addEventListener("click", () => { fillForm(); dlg.showModal(); });
   $("useGps").addEventListener("click", () => {
     $("locNote").textContent = "Finding you…";
@@ -1044,6 +1172,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     ["showClass", "showNext", "showProgress", "showModel", "showMedical"].forEach((k) => { cfg[k] = $(k).checked; });
     cfg.airportNames = $("airportNames").value;
     cfg.saveBattery = $("saveBattery").checked;
+    cfg.keepScreenOn = $("keepScreenOn").checked;
     keepAwake();
     saveCfg();
     if (here) start();
