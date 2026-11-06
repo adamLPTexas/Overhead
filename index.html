@@ -7,6 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
+<meta name="version" content="1.1">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -127,7 +128,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <div class="listhead"><span id="countLabel">In range</span><span id="rangeLabel"></span></div>
   <div class="list" id="list"></div>
 
-  <p class="foot">Live ADS-B data from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a> (falls back to <a href="https://airplanes.live" target="_blank" rel="noopener">airplanes.live</a>). Routes are best-guess from callsign and can be wrong. Tap a plane in the list to put it on the wall.</p>
+  <p class="foot">Live ADS-B data from <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a>. Routes from <a href="https://www.adsbdb.com" target="_blank" rel="noopener">adsbdb</a>, looked up by callsign and can be wrong. Tap a plane in the list to put it on the wall. <span id="ver"></span></p>
 </div>
 
 <dialog id="settings">
@@ -260,11 +261,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     // which avoids the browser's cross-site block. Direct URLs are a last resort.
     const sources = location.protocol.startsWith("http") ? [
       ["adsb.lol", `/adsblol/v2/point/${q}`],
-      ["airplanes.live", `/apl/v2/point/${q}`],
-      ["adsb.lol", `https://api.adsb.lol/v2/point/${q}`],
     ] : [
       ["adsb.lol", `https://api.adsb.lol/v2/point/${q}`],
-      ["airplanes.live", `https://api.airplanes.live/v2/point/${q}`],
     ];
     let lastErr;
     for (const [name, url] of sources) {
@@ -276,25 +274,29 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     throw lastErr || new Error("No data source responded");
   }
 
+  // Routes come from adsbdb.com, which allows browser requests directly.
+  // One lookup per callsign; results (including "unknown") are cached for the session.
+  async function lookupRoute(callsign) {
+    try {
+      const r = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
+      if (r.status === 404) return { route: null };
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const f = ((await r.json()).response || {}).flightroute;
+      const code = (a) => a && (a.iata_code || a.icao_code);
+      const o = f && code(f.origin), d = f && code(f.destination);
+      return { route: o && d ? [o, d] : null };
+    } catch (e) {
+      return null; // network hiccup: try again next cycle
+    }
+  }
   async function fetchRoutes(planes) {
-    const need = planes.filter((p) => p.callsign && /^[A-Z]{3}\d/.test(p.callsign) && !routeCache.has(p.callsign)).slice(0, 25);
+    const need = planes.filter((p) => p.callsign && /^[A-Z]{3}\d/.test(p.callsign) && !routeCache.has(p.callsign)).slice(0, 10);
     if (!need.length) return;
     need.forEach((p) => routeCache.set(p.callsign, { route: null, pending: true }));
-    try {
-      const res = await fetchJson(location.protocol.startsWith("http") ? "/adsblol/api/0/routeset" : "https://api.adsb.lol/api/0/routeset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planes: need.map((p) => ({ callsign: p.callsign, lat: p.lat, lng: p.lon })) }),
-      });
-      (Array.isArray(res) ? res : []).forEach((r) => {
-        const codes = r._airport_codes_iata || r.airport_codes || "";
-        const parts = codes && codes !== "unknown" ? codes.split("-").filter(Boolean) : [];
-        routeCache.set(r.callsign, { route: parts.length >= 2 ? parts : null, plausible: r.plausible });
-      });
-      need.forEach((p) => { const c = routeCache.get(p.callsign); if (c && c.pending) routeCache.set(p.callsign, { route: null }); });
-    } catch (e) {
-      need.forEach((p) => routeCache.delete(p.callsign)); // try again next cycle
-    }
+    await Promise.all(need.map(async (p) => {
+      const res = await lookupRoute(p.callsign);
+      if (res) routeCache.set(p.callsign, res); else routeCache.delete(p.callsign);
+    }));
   }
 
   function normalize(ac) {
@@ -490,6 +492,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     saveCfg();
     if (here) start();
   });
+
+  // show the version from <meta name="version"> so you can confirm which build is live
+  try { $("ver").textContent = "v" + document.querySelector('meta[name="version"]').content; } catch (e) {}
 
   // ---- boot ----
   keepAwake();
