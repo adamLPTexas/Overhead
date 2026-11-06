@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.6">
+<meta name="version" content="2.7">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -162,6 +162,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .wall.emer{border-color:var(--ec);box-shadow:inset 0 0 50px color-mix(in srgb,var(--ec) 35%,transparent),0 0 0 2px var(--ec)}
 .row.emer{background:color-mix(in srgb,var(--ec) 22%,transparent)}
 .row.emer .cs{color:var(--ec)}
+/* emergency type label in the list, e.g. "HIJACK 7500" */
+.row .emtag{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--ec,var(--red));border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px}
 /* medical: same highlight treatment as emergencies, in green and steady (no flashing) */
 .med-banner{display:inline-block;font-family:var(--led);font-size:clamp(22px,6vw,30px);letter-spacing:.06em;color:#06210c;background:var(--green);border-radius:6px;padding:2px 10px;margin-bottom:8px;text-shadow:none;line-height:1.1}
 .wall.med{border-color:var(--green);box-shadow:inset 0 0 50px rgba(80,220,120,.25),0 0 0 2px var(--green)}
@@ -535,6 +537,12 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (a.squawk === "7500" || a.emergency === "unlawful") return "hijack";
     return "general";
   }
+  // short label for the list, so it fits on a phone ("RADIO FAIL 7600" rather than "RADIO FAILURE · 7600")
+  const SHORT_TYPES = { general: "EMERGENCY", nordo: "RADIO FAIL", unlawful: "HIJACK", minfuel: "MIN FUEL", downed: "DOWN", reserved: "EMERGENCY" };
+  function shortEmer(p) {
+    if (p.squawk && EMERGENCY_SQUAWKS[p.squawk]) return { "7700": "EMERGENCY", "7600": "RADIO FAIL", "7500": "HIJACK" }[p.squawk] + " " + p.squawk;
+    return SHORT_TYPES[p.emergencyType] || "EMERGENCY";
+  }
   function emergencyOf(a) {
     if (a.squawk && EMERGENCY_SQUAWKS[a.squawk]) return `${EMERGENCY_SQUAWKS[a.squawk]} · ${a.squawk}`;
     if (a.emergency && EMERGENCY_TYPES[a.emergency]) return EMERGENCY_TYPES[a.emergency];
@@ -577,6 +585,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
           navHdg: a.nav_heading ?? null,                             // autopilot target heading
           emer: emergencyOf(a),
           emerKind: emergencyKind(a),
+          emergencyType: a.emergency || null,
+          squawk: a.squawk || null, // kept for list labels and the log
           medical: isMedical(a),
           lat: a.lat, lon: a.lon,
           dist: d,
@@ -710,7 +720,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const subLine = [airlineFor(p.callsign, p.reg), p.type, cfg.showClass !== false && CLASSES[p.category]].filter(Boolean).join(" · ");
       const a = altStr(p.alt), d = dstStr(p.dist);
       return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}${p.emer ? " emer ek-" + p.emerKind : p.medical && showMed() ? " med" : ""}" data-hex="${esc(p.hex)}"${p.emer ? ` title="${esc(p.emer)}"` : ""}>
-        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${p.medical && showMed() ? `<span class="med">Medical</span> · ` : ""}${esc(subLine)}</div></div>
+        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${p.emer ? `<span class="emtag">${esc(shortEmer(p))}</span>` : p.medical && showMed() ? `<span class="med">Medical</span> · ` : ""}${esc(subLine)}</div></div>
         <div class="orig${orig ? "" : " na"}">${orig ? esc(orig) : "—"}</div>
         <div class="dest${dest ? "" : " na"}">${dest ? esc(dest) : (rc && rc.pending ? "…" : "—")}</div>
         <div class="num">${a.v}</div>
