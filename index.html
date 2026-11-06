@@ -16,7 +16,7 @@
 /* Layout: one LED "wall" panel for the nearest plane, then a scannable list of everything else in range. Single dark look, like a real LED display. */
 :root{
   --bg:#07090b; --panel:#0d1115; --line:#1b232a;
-  --amber:#ffb347; --amber-dim:#5c4321; --cyan:#7fd8ff; --green:#7ee08a; --red:#ff7a6b;
+  --amber:#ff4fa3; --amber-dim:#7a2a55; --cyan:#7fd8ff; --green:#7ee08a; --red:#ff7a6b;
   --fg:#d9e2e9; --muted:#7b8893;
   --led:"VT323",ui-monospace,"SF Mono",Menlo,monospace;
   --ui:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
@@ -56,7 +56,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 }
 .led{font-family:var(--led);line-height:.95;text-shadow:0 0 6px currentColor}
 .w-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.callsign{font-size:clamp(56px,17vw,96px);color:var(--amber);letter-spacing:.03em}
+.callsign{font-size:clamp(48px,14vw,96px);color:var(--amber);letter-spacing:.03em}
 .airline{font-size:clamp(22px,6vw,30px);color:var(--fg);margin-top:4px;opacity:.9}
 .route{font-size:clamp(34px,10vw,54px);color:var(--cyan);margin-top:10px;display:flex;align-items:center;gap:.3em;flex-wrap:wrap}
 .route .arrow{color:var(--amber-dim)}
@@ -74,13 +74,20 @@ button{font:inherit;color:inherit;cursor:pointer}
 /* list */
 .listhead{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:0 2px}
 .list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
-.row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:11px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 2.4em 2.4em 3.6em 2.8em;gap:8px;align-items:center;padding:11px 14px;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;width:100%}
 .row:first-child{border-top:0}
 .row.sel{background:#141a20}
-.row .cs{font-family:var(--led);font-size:24px;color:var(--amber);line-height:1}
+.row .cs{font-family:var(--led);font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:clip;color:var(--amber);line-height:1}
 .row .sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .num{font-variant-numeric:tabular-nums;font-size:14px;text-align:right;white-space:nowrap}
 .row .num small{color:var(--muted);font-size:11px}
+.row .dest{font-family:var(--led);font-size:22px;color:var(--cyan);line-height:1;text-align:center}
+.row .orig.na{color:var(--muted);font-size:16px}
+.row .dest.na{color:var(--muted);font-size:16px}
+.row.colhead{padding-top:8px;padding-bottom:8px;font-size:10px;letter-spacing:.04em;white-space:nowrap;text-transform:uppercase;color:var(--muted);cursor:default}
+.row.colhead > div:nth-child(2),.row.colhead > div:nth-child(3){text-align:center}
+.row .orig{font-family:var(--led);font-size:22px;color:var(--fg);opacity:.75;line-height:1;text-align:center}
+.row.colhead > div:nth-child(n+4){text-align:right}
 .foot{font-size:12px;color:var(--muted);line-height:1.5;padding:0 2px}
 .foot a{color:var(--cyan)}
 
@@ -95,7 +102,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btnrow{display:flex;gap:10px;flex-wrap:wrap}
 .btn{background:#06080a;border:1px solid var(--line);border-radius:8px;padding:10px 14px}
-.btn.primary{background:var(--amber);color:#1a1205;border-color:var(--amber);font-weight:600}
+.btn.primary{background:var(--amber);color:#1a0510;border-color:var(--amber);font-weight:600}
 .note{font-size:12px;color:var(--muted);line-height:1.45;margin:0}
 @media (prefers-reduced-motion:no-preference){
   .flash{animation:flash .5s ease-out}
@@ -326,7 +333,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <circle cx="32" cy="32" r="28" fill="none" stroke="#2a3138" stroke-width="1.5"/>
       <text x="32" y="11" text-anchor="middle" font-family="VT323,monospace" font-size="10" fill="#7b8893">N</text>
       <circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="2.5" fill="#7fd8ff"/>
-      ${track == null ? "" : `<g transform="rotate(${t} 32 32)"><path d="M32 16 L39 40 L32 35 L25 40 Z" fill="#ffb347"/></g>`}
+      ${track == null ? "" : `<g transform="rotate(${t} 32 32)"><path d="M32 16 L39 40 L32 35 L25 40 Z" fill="#ff4fa3"/></g>`}
     </svg>`;
   }
 
@@ -371,15 +378,19 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     $("rangeLabel").textContent = `${cfg.radius} nm radius`;
     if (!planes.length) { list.innerHTML = ""; list.hidden = true; return; }
     list.hidden = false;
-    list.innerHTML = planes.map((p) => {
+    list.innerHTML = `<div class="row colhead" aria-hidden="true"><div>Flight</div><div>From</div><div>To</div><div>Alt ${altStr(0).u}</div><div>${dstStr(1).u}</div></div>` + planes.map((p) => {
       const rc = routeCache.get(p.callsign);
-      const route = rc && rc.route ? `${rc.route[0]}→${rc.route[rc.route.length - 1]}` : (p.type || "");
+      const route = rc && rc.route;
+      const dest = route ? route[route.length - 1] : null;
+      const orig = route ? route[0] : null;
+      const subLine = [airlineFor(p.callsign, p.reg), p.type].filter(Boolean).join(" · ");
       const a = altStr(p.alt), d = dstStr(p.dist);
       return `<button type="button" class="row${p.hex === selHex ? " sel" : ""}" data-hex="${esc(p.hex)}">
-        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${esc(airlineFor(p.callsign, p.reg))}</div></div>
-        <div class="sub">${esc(route)}${p.type && rc && rc.route ? " · " + esc(p.type) : ""}</div>
-        <div class="num">${a.v}<small> ${a.u}</small></div>
-        <div class="num">${d.v}<small> ${d.u}</small></div>
+        <div style="min-width:0"><div class="cs">${esc(p.callsign || p.reg || p.hex.toUpperCase())}</div><div class="sub">${esc(subLine)}</div></div>
+        <div class="orig${orig ? "" : " na"}">${orig ? esc(orig) : "—"}</div>
+        <div class="dest${dest ? "" : " na"}">${dest ? esc(dest) : (rc && rc.pending ? "…" : "—")}</div>
+        <div class="num">${a.v}</div>
+        <div class="num">${d.v}</div>
       </button>`;
     }).join("");
   }
@@ -392,7 +403,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   }
 
   $("list").addEventListener("click", (e) => {
-    const row = e.target.closest(".row");
+    const row = e.target.closest(".row[data-hex]");
     if (!row) return;
     pinnedHex = row.dataset.hex === (lastPlanes[0] && lastPlanes[0].hex) ? null : row.dataset.hex;
     render();
