@@ -1,4 +1,4 @@
-// Overhead watcher: a Netlify Scheduled Function that runs every 3 minutes on Netlify's
+// Overhead watcher: a Netlify Scheduled Function that runs every 5 minutes on Netlify's
 // servers, so emergency and medical flights are logged even when no one has the app open.
 //
 // Each run makes two kinds of checks:
@@ -20,7 +20,7 @@
 
 import { logStore, safeKey, clip, num, readWeekTally, writeWeekTally, logHourlyError } from "../shared/log-store.mjs";
 
-export const config = { schedule: "*/3 * * * *" }; // every 3 minutes
+export const config = { schedule: "*/5 * * * *" }; // every 5 minutes
 
 const DEFAULT_CENTER = { lat: 32.7767, lon: -96.797 }; // downtown Dallas
 const MEDICAL_RADIUS_NM = 200;

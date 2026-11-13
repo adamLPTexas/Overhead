@@ -10,7 +10,7 @@
 // The timestamp is added here on the server, so every entry's time comes from one clock.
 // Emergency and medical sightings are stored once per aircraft, per code, per day (UTC):
 // if several people have the app open, the flight is logged once, at its first sighting.
-// The 3-minute watcher (watch.mjs) writes to the same entries and raises their "count" each
+// The 5-minute watcher (watch.mjs) writes to the same entries and raises their "count" each
 // time it sees the flight again; a repeat sent by the app doesn't, so the count doesn't
 // depend on how many people have the app open. New emergencies count toward the weekly cap
 // (see ../shared/log-store.mjs); once it's reached, emergency entries are refused until the
