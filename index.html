@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.8">
+<meta name="version" content="2.9">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1087,7 +1087,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
         const a = altStr(e.alt), sp = spdStr(e.speed_kt);
         const det = [e.aircraft, e.reg, e.from || e.to ? `${e.from || "—"} → ${e.to || "—"}` : null,
           e.alt != null ? `${a.v} ${a.u}` : null, e.speed_kt != null ? `${sp.v} ${sp.u}` : null,
-          e.lat != null ? `${e.lat.toFixed(3)}, ${e.lon.toFixed(3)}` : null].filter(Boolean).map(esc).join(" · ");
+          e.lat != null ? `${e.lat.toFixed(3)}, ${e.lon.toFixed(3)}` : null,
+          e.via === "watcher" ? "seen by the 3-minute watcher" : null].filter(Boolean).map(esc).join(" · ");
         return `<div class="log-item"><span class="when">${esc(when)}</span><span class="pill ${e.type}">${e.type === "medical" ? "Medical" : "Emergency"}</span>
           <span class="what"><b>${esc(e.callsign || e.reg || e.hex || "")}</b>${esc(e.label || "")}<br><span class="det">${det}</span></span></div>`;
       }).join("")}</div>`;
