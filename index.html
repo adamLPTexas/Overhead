@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.7">
+<meta name="version" content="2.8">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -123,6 +123,24 @@ button{font:inherit;color:inherit;cursor:pointer}
 .foot{font-size:12px;color:var(--muted);line-height:1.5;padding:0 2px}
 .foot a{color:var(--cyan)}
 
+/* map view (toggled with the Map link in the footer) */
+.map{height:min(65vh,560px);min-height:320px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0a0d10}
+.map .leaflet-container,.map.leaflet-container{background:#0a0d10;font-family:var(--ui)}
+.map .msg{padding:24px;font-size:14px;color:var(--muted);line-height:1.45}
+.leaflet-control-attribution{background:rgba(7,9,11,.75)!important;color:var(--muted)!important;font-size:10px}
+.leaflet-control-attribution a{color:var(--cyan)!important}
+.leaflet-bar a,.leaflet-bar a:hover{background:var(--panel)!important;color:var(--fg)!important;border-color:var(--line)!important}
+.pm-wrap{background:none;border:0}
+.pm{position:relative;width:28px;height:28px;color:var(--amber);cursor:pointer;filter:drop-shadow(0 0 2px #000) drop-shadow(0 0 2px #000)}
+.pm svg{width:100%;height:100%;display:block;fill:currentColor;transform:rotate(var(--r,0deg))}
+.pm span{position:absolute;top:27px;left:50%;transform:translateX(-50%);font-family:var(--led);font-size:16px;line-height:1;white-space:nowrap;color:currentColor;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000}
+.pm.med{color:var(--green)}
+.pm.emer{color:var(--ec)}
+.pm.gnd{opacity:.55}
+.pm.sel{color:var(--cyan);width:34px;height:34px;margin:-3px}
+.pm.sel svg{filter:drop-shadow(0 0 6px var(--cyan))}
+.pm.sel span{top:33px}
+
 /* settings */
 dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:14px;padding:0;width:min(440px,calc(100vw - 32px))}
 dialog::backdrop{background:rgba(0,0,0,.6)}
@@ -210,10 +228,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   </div>
   <p class="hint" id="listHint">Tap a plane in the list to put it on the wall. Right-click or long-press one to see where to look for it in the sky.</p>
   <div class="list" id="list"></div>
+  <div class="map" id="map" hidden></div>
 
   <!-- Data sources: live ADS-B positions from adsb.lol (https://adsb.lol).
        Routes from adsbdb (https://www.adsbdb.com), looked up by callsign, so they can be wrong. -->
-  <p class="foot"><span id="ver"></span><button type="button" class="loglink" id="openLog">Log</button></p>
+  <p class="foot"><span id="ver"></span><button type="button" class="loglink" id="openLog">Log</button><button type="button" class="loglink" id="toggleMap">Map</button></p>
 </div>
 
 <dialog id="settings">
@@ -843,6 +862,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     if (!sel) { pinnedHex = null; sel = planes[0]; }
     renderWall(sel);
     renderList(planes, sel && sel.hex);
+    lastSelHex = sel ? sel.hex : null;
+    if (mapOn()) { $("list").hidden = true; renderMap(planes, lastSelHex); }
     if (spotHex) renderSpot();
   }
 
@@ -865,6 +886,137 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
+
+  // ---- Map view ------------------------------------------------------------------------
+  // The Map link (next to Log, at the bottom) swaps the list for a map of the same planes:
+  // Esri dark gray tiles, you and your radius in cyan, and one plane icon per
+  // flight, pointed along its track. Same filters and colours as the list. Tap a plane to
+  // put it on the wall; right-click one to see where to look for it in the sky. Between
+  // refreshes, moving planes are nudged along their track every second so they keep moving.
+  // The map library (Leaflet) only loads the first time the map is opened.
+  const LIST_HINT = $("listHint").textContent;
+  const MAP_HINT = "Tap a plane on the map to put it on the wall. Right-click one to see where to look for it in the sky.";
+  const PLANE_PATH = "M12 2c.8 0 1.3.9 1.3 2v5.2l7.2 4.3v2l-7.2-2.2v4.4l2 1.5V21l-3.3-1-3.3 1v-1.8l2-1.5v-4.4l-7.2 2.2v-2l7.2-4.3V4c0-1.1.5-2 1.3-2z";
+  const mapOn = () => cfg.view === "map";
+  let map = null, meMarker = null, rangeCircle = null, fitKey = "", lastSelHex = null, leafletP = null;
+  const planeMarkers = new Map(); // hex -> Leaflet marker
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (leafletP) return leafletP;
+    leafletP = new Promise((resolve, reject) => {
+      const css = document.createElement("link");
+      css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      css.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="; css.crossOrigin = "";
+      document.head.appendChild(css);
+      const js = document.createElement("script");
+      js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      js.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="; js.crossOrigin = "";
+      js.onload = resolve;
+      js.onerror = () => { leafletP = null; js.remove(); reject(new Error("couldn't load the map library")); };
+      document.head.appendChild(js);
+    });
+    return leafletP;
+  }
+  function ensureMap() {
+    if (map) return;
+    $("map").innerHTML = "";
+    map = L.map("map", { worldCopyJump: true, maxZoom: 16 });
+    // Esri's free Dark Gray Canvas (no API key needed): the base map, plus a layer of place names on top
+    const esri = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
+    L.tileLayer(esri + "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+      maxZoom: 16,
+      attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+    L.tileLayer(esri + "World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", { maxZoom: 16 }).addTo(map);
+    map.setView(here ? [here.lat, here.lon] : [39, -96], here ? 10 : 4);
+  }
+  // where a moving plane should be now, from its last reported position, speed and track
+  function driftPos(o) {
+    if (!o.moving) return [o.lat, o.lon];
+    const sec = Math.min((Date.now() - dataTime) / 1000, (refreshMs() / 1000) * 2);
+    const nm = (o.gs * sec) / 3600, t = toRad(o.track);
+    return [o.lat + (nm * Math.cos(t)) / 60, o.lon + (nm * Math.sin(t)) / (60 * Math.cos(toRad(o.lat)))];
+  }
+  function planeIconHtml(p, sel) {
+    const cls = ["pm"];
+    if (sel) cls.push("sel");
+    if (p.emer) cls.push("emer", "ek-" + p.emerKind);
+    else if (p.medical && showMed()) cls.push("med");
+    if (p.alt === "ground") cls.push("gnd");
+    const label = p.callsign || p.reg || p.hex.toUpperCase();
+    return `<div class="${cls.join(" ")}" style="--r:${p.track ?? 0}deg"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${PLANE_PATH}"/></svg><span>${esc(label)}</span></div>`;
+  }
+  function pickPlane(hex) {
+    const first = visiblePlanes()[0];
+    pinnedHex = hex === (first && first.hex) ? null : hex;
+    render();
+    if ($("wall").getBoundingClientRect().bottom < 0) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function renderMap(planes, selHex) {
+    if (!map) return;
+    if (here) {
+      const ll = [here.lat, here.lon];
+      if (!meMarker) {
+        rangeCircle = L.circle(ll, { radius: 1, color: "#7fd8ff", weight: 1, opacity: 0.5, fillOpacity: 0.04, dashArray: "4 6", interactive: false }).addTo(map);
+        meMarker = L.circleMarker(ll, { radius: 5, color: "#07090b", weight: 2, fillColor: "#7fd8ff", fillOpacity: 1 }).addTo(map).bindTooltip("You");
+      }
+      meMarker.setLatLng(ll); rangeCircle.setLatLng(ll); rangeCircle.setRadius(radiusNm() * 1852);
+      // re-frame the map when your location or radius changes (not on every refresh)
+      const key = `${here.lat.toFixed(3)},${here.lon.toFixed(3)},${radiusNm()},${SQUAWK_MODE === 2 ? planes.length > 0 : ""}`;
+      if (key !== fitKey) {
+        fitKey = key;
+        if (SQUAWK_MODE === 2 && planes.length) map.fitBounds(L.latLngBounds(planes.map((p) => [p.lat, p.lon])).pad(0.3), { maxZoom: 8 });
+        else map.fitBounds(rangeCircle.getBounds(), { padding: [12, 12] });
+      }
+    }
+    const seen = new Set();
+    for (const p of planes) {
+      seen.add(p.hex);
+      const html = planeIconHtml(p, p.hex === selHex);
+      let m = planeMarkers.get(p.hex);
+      if (!m) {
+        m = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: "pm-wrap", html, iconSize: [28, 28], iconAnchor: [14, 14] }), title: p.callsign || p.reg || "" }).addTo(map);
+        const hex = p.hex;
+        m.on("click", () => pickPlane(hex));
+        m.on("contextmenu", (e) => { if (e.originalEvent) e.originalEvent.preventDefault(); openSpot(hex); });
+        m.ohHtml = html;
+        planeMarkers.set(p.hex, m);
+      } else if (m.ohHtml !== html) {
+        m.setIcon(L.divIcon({ className: "pm-wrap", html, iconSize: [28, 28], iconAnchor: [14, 14] }));
+        m.ohHtml = html;
+      }
+      m.oh = { lat: p.lat, lon: p.lon, gs: p.gs, track: p.track,
+        moving: p.alt !== "ground" && typeof p.gs === "number" && p.gs > 30 && typeof p.track === "number" };
+      m.setLatLng(driftPos(m.oh));
+      m.setZIndexOffset(p.hex === selHex ? 2000 : p.emer ? 1500 : p.medical ? 1000 : 0);
+    }
+    for (const [hex, m] of planeMarkers) if (!seen.has(hex)) { m.remove(); planeMarkers.delete(hex); }
+  }
+  setInterval(() => {
+    if (!map || !mapOn() || document.hidden) return;
+    for (const m of planeMarkers.values()) if (m.oh && m.oh.moving) m.setLatLng(driftPos(m.oh));
+  }, 1000);
+  async function setView(view) {
+    cfg.view = view; saveCfg();
+    const on = view === "map";
+    $("toggleMap").textContent = on ? "List" : "Map";
+    $("toggleMap").setAttribute("aria-label", on ? "Show the list of planes" : "Show planes on a map");
+    $("listHint").textContent = on ? MAP_HINT : LIST_HINT;
+    $("map").hidden = !on;
+    if (!on) { $("list").hidden = !visiblePlanes().length; return; }
+    $("list").hidden = true;
+    try {
+      await loadLeaflet();
+      if (!mapOn()) return; // switched back while loading
+      ensureMap();
+      map.invalidateSize();
+      renderMap(visiblePlanes(), lastSelHex);
+    } catch (e) {
+      logError("map", e);
+      $("map").innerHTML = `<p class="msg">The map couldn't load (${esc(e.message)}). Check your connection, then tap List and Map to try again.</p>`;
+    }
+  }
+  $("toggleMap").addEventListener("click", () => setView(mapOn() ? "list" : "map"));
 
   // ---- Activity log ---------------------------------------------------------------------
   // Emergency and medical flights, and failed data fetches, are sent to the site's log
@@ -1251,6 +1403,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   if (SQUAWK_MODE === 2) { $("filtersRow").hidden = true; $("listHint").hidden = true; }
 
   // ---- boot ----
+  if (mapOn()) setView("map");
   keepAwake();
   document.addEventListener("click", keepAwake, { once: true });
   if (here) start();
