@@ -4,26 +4,29 @@
 //     { type: "emergency" | "medical", label, flight: { hex, callsign, reg, aircraft,
 //       squawk, alt, gs, track, lat, lon, from, to } }
 //     { type: "error", source, message, version }
-//   GET  /api/log?days=7   newest entries first (max 31 days, 500 entries)
+//   GET  /api/log?days=7   newest entries first (max 31 days, 500 entries), plus this
+//                          week's emergency tally: { entries, week: { start, count, limit, paused } }
 //
 // The timestamp is added here on the server, so every entry's time comes from one clock.
 // Emergency and medical sightings are stored once per aircraft, per code, per day (UTC):
 // if several people have the app open, the flight is logged once, at its first sighting.
+// The 3-minute watcher (watch.mjs) writes to the same entries and raises their "count" each
+// time it sees the flight again; a repeat sent by the app doesn't, so the count doesn't
+// depend on how many people have the app open. New emergencies count toward the weekly cap
+// (see ../shared/log-store.mjs); once it's reached, emergency entries are refused until the
+// week resets at midnight Sunday, Central time.
 // Every field is length-capped and type-checked, because anyone with the link can call this.
 
-import { getStore } from "@netlify/blobs";
+import { logStore, clip, num, safeKey, readWeekTally, writeWeekTally } from "../shared/log-store.mjs";
 
 export const config = { path: "/api/log" };
 
 const TYPES = new Set(["emergency", "medical", "error"]);
 const MAX_BODY = 4000;      // bytes
 const MAX_RESULTS = 500;
-const clip = (v, n) => (v == null || v === "" ? null : String(v).slice(0, n));
-const num = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10000) / 10000 : null);
-const safeKey = (s) => s.replace(/[^A-Za-z0-9/_\-.:]/g, "_");
 
 export default async (req) => {
-  const store = getStore({ name: "overhead-log", consistency: "strong" });
+  const store = logStore();
 
   if (req.method === "GET") {
     const url = new URL(req.url);
@@ -39,7 +42,8 @@ export default async (req) => {
       }
     }
     entries.sort((a, b) => String(b.time).localeCompare(String(a.time)));
-    return Response.json({ entries }, { headers: { "Cache-Control": "no-store" } });
+    const week = await readWeekTally(store);
+    return Response.json({ entries, week }, { headers: { "Cache-Control": "no-store" } });
   }
 
   if (req.method !== "POST") return new Response("Use GET or POST", { status: 405 });
@@ -67,6 +71,11 @@ export default async (req) => {
     };
     key = `${day}/error/${time}-${Math.random().toString(36).slice(2, 8)}`;
   } else {
+    let tally = null;
+    if (body.type === "emergency") {
+      tally = await readWeekTally(store);
+      if (tally.paused) return Response.json({ ok: true, paused: true });
+    }
     const f = body.flight || {};
     entry = {
       type: body.type, time,
@@ -83,10 +92,15 @@ export default async (req) => {
       lon: num(f.lon),
       from: clip(f.from, 8),
       to: clip(f.to, 8),
+      count: 1,
+      last: time,
     };
     if (!entry.hex || entry.hex.startsWith("~")) return new Response("Missing aircraft code", { status: 400 });
     key = `${day}/${body.type}/${entry.hex}-${entry.squawk || "none"}`;
     if (await store.getMetadata(safeKey(key))) return Response.json({ ok: true, duplicate: true });
+    await store.setJSON(safeKey(key), entry);
+    if (tally) await writeWeekTally(store, tally.start, tally.count + 1);
+    return Response.json({ ok: true });
   }
 
   await store.setJSON(safeKey(key), entry);

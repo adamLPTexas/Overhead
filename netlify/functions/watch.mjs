@@ -1,38 +1,43 @@
-// Overhead watcher: a Netlify Scheduled Function that checks the sky every 3 minutes, on
-// Netlify's servers, so emergency and medical flights get logged even when no one has the
-// app open. It writes to the same log as the app (netlify/functions/log.mjs), using the same
-// entry format and the same key, so a flight seen by both the watcher and an open app is
-// still logged only once per aircraft, per code, per day (UTC).
+// Overhead watcher: a Netlify Scheduled Function that runs every 3 minutes on Netlify's
+// servers, so emergency and medical flights are logged even when no one has the app open.
 //
-// Where to watch comes from the site's environment variables (Netlify: Site configuration →
-// Environment variables), so your location is never in the code or on GitHub:
-//   OVERHEAD_LAT        latitude,  e.g. 32.95
-//   OVERHEAD_LON        longitude, e.g. -96.85
-//   OVERHEAD_RADIUS_MI  optional, miles around that point to watch (default 15, max 250)
-// Without OVERHEAD_LAT and OVERHEAD_LON the watcher does nothing.
+// Each run makes two kinds of checks:
+//   Emergencies, worldwide: every aircraft adsb.lol can see squawking 7700 (emergency),
+//     7600 (radio failure) or 7500 (hijack). No location needed.
+//   Medical flights, regional: every aircraft within 200 nm of downtown Dallas, checked for
+//     the "lifeguard" (medical) status. adsb.lol can't filter by that status worldwide, so
+//     this needs an area. Emergencies that only set a status (e.g. minimum fuel) without
+//     changing their squawk code are caught here too, within the same area.
+//   The centre can be moved with the site's environment variables OVERHEAD_LAT / OVERHEAD_LON
+//   (Netlify: Site configuration → Environment variables); downtown Dallas is the default.
 //
-// Same rules as the app: squawk 7700 / 7600 / 7500 or an emergency status = emergency;
-// "lifeguard" status = medical; planes whose owners opted out of tracking (LADD / PIA) are
-// skipped. Free Netlify functions get 10 seconds per run, so every lookup has a short timeout.
+// Every sighting lands in the same log as the app (see ../shared/log-store.mjs): a flight
+// gets one entry per code per day, and its "count" goes up each time a later run sees it
+// again. Emergencies also count toward the weekly cap (EMERGENCY_WEEKLY_LIMIT, 200); once
+// it's reached, emergency logging stops until midnight Sunday, Central time.
+// Planes whose owners opted out of tracking (LADD / PIA) are skipped, as in the app.
+// Free Netlify functions get 10 seconds per run, so every lookup has a short timeout.
 
-import { getStore } from "@netlify/blobs";
+import { logStore, safeKey, clip, num, readWeekTally, writeWeekTally, logHourlyError } from "../shared/log-store.mjs";
 
-export const config = { schedule: "*/3 * * * *" }; // every 3 minutes (UTC clock)
+export const config = { schedule: "*/3 * * * *" }; // every 3 minutes
+
+const DEFAULT_CENTER = { lat: 32.7767, lon: -96.797 }; // downtown Dallas
+const MEDICAL_RADIUS_NM = 200;
+const EMERGENCY_CODES = ["7700", "7600", "7500"];
+const MAX_ROUTE_LOOKUPS = 8; // per run, to stay inside the 10-second limit
 
 const EMERGENCY_SQUAWKS = { "7700": "EMERGENCY", "7600": "RADIO FAILURE", "7500": "HIJACK" };
 const EMERGENCY_TYPES = { general: "EMERGENCY", minfuel: "MINIMUM FUEL", nordo: "RADIO FAILURE", unlawful: "HIJACK", downed: "AIRCRAFT DOWN", reserved: "EMERGENCY" };
 const PRIVACY_FLAGS = 4 | 8; // PIA | LADD
 const UA = { "User-Agent": "Overhead watcher (wtfisoverheadme.netlify.app)" };
 
-const clip = (v, n) => (v == null || v === "" ? null : String(v).slice(0, n));
-const num = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10000) / 10000 : null);
-const safeKey = (s) => s.replace(/[^A-Za-z0-9/_\-.:]/g, "_");
-
 function emergencyOf(a) {
   if (a.squawk && EMERGENCY_SQUAWKS[a.squawk]) return `${EMERGENCY_SQUAWKS[a.squawk]} · ${a.squawk}`;
   if (a.emergency && EMERGENCY_TYPES[a.emergency]) return EMERGENCY_TYPES[a.emergency];
   return null;
 }
+const trackable = (a) => a && a.hex && !String(a.hex).startsWith("~") && ((a.dbFlags | 0) & PRIVACY_FLAGS) === 0;
 
 async function getJson(url, ms) {
   const ctl = new AbortController();
@@ -55,62 +60,73 @@ async function routeFor(callsign) {
   } catch { return null; }
 }
 
+function buildEntry(h, route, time) {
+  const a = h.a;
+  const alt = a.alt_baro === "ground" ? 0 : (a.alt_baro ?? a.alt_geom ?? null);
+  return {
+    type: h.type, time, last: time, count: 1, via: "watcher",
+    label: clip(h.emer || "MEDICAL", 40),
+    callsign: clip(h.callsign, 12),
+    reg: clip(a.r, 12),
+    hex: clip(a.hex, 8),
+    aircraft: clip(a.desc || a.t, 60),
+    squawk: clip(a.squawk, 4),
+    alt: num(alt),
+    speed_kt: num(a.gs),
+    track: num(a.track ?? a.true_heading),
+    lat: num(a.lat),
+    lon: num(a.lon),
+    from: clip(route && route[0], 8),
+    to: clip(route && route[1], 8),
+  };
+}
+
 export default async () => {
+  const store = logStore();
   const lat = parseFloat(process.env.OVERHEAD_LAT), lon = parseFloat(process.env.OVERHEAD_LON);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    console.log("watcher: OVERHEAD_LAT / OVERHEAD_LON not set, nothing to do");
-    return;
-  }
-  const miles = Math.min(250, Math.max(1, parseFloat(process.env.OVERHEAD_RADIUS_MI) || 15));
-  const nm = Math.ceil(miles / 1.15078);
-  const store = getStore({ name: "overhead-log", consistency: "strong" });
+  const center = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : DEFAULT_CENTER;
 
-  let ac;
-  try {
-    const j = await getJson(`https://api.adsb.lol/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/${nm}`, 6000);
-    ac = j.ac || j.aircraft || [];
-  } catch (e) {
-    // at most one watcher error entry per hour, so an outage doesn't flood the log
-    const time = new Date().toISOString();
-    const key = safeKey(`${time.slice(0, 10)}/error/watcher-${time.slice(11, 13)}`);
-    if (!(await store.getMetadata(key))) {
-      await store.setJSON(key, { type: "error", time, source: "watcher", message: clip(e.message, 200), version: null });
-    }
-    console.log("watcher: adsb.lol failed:", e.message);
-    return;
-  }
+  const [area, ...squawks] = await Promise.allSettled([
+    getJson(`https://api.adsb.lol/v2/point/${center.lat.toFixed(4)}/${center.lon.toFixed(4)}/${MEDICAL_RADIUS_NM}`, 7000),
+    ...EMERGENCY_CODES.map((c) => getJson(`https://api.adsb.lol/v2/sqk/${c}`, 7000)),
+  ]);
+  const failed = [area, ...squawks].filter((r) => r.status === "rejected");
+  if (failed.length) await logHourlyError(store, "watcher", `adsb.lol: ${failed.length} of 4 lookups failed (${failed[0].reason && failed[0].reason.message})`).catch(() => {});
 
-  const hits = ac.filter((a) => a.hex && !String(a.hex).startsWith("~") && !(((a.dbFlags | 0) & PRIVACY_FLAGS) !== 0))
-    .map((a) => ({ a, emer: emergencyOf(a), medical: a.emergency === "lifeguard" }))
-    .filter((h) => h.emer || h.medical);
+  // everything worth logging this run, one per aircraft
+  const hits = new Map();
+  const add = (a, emer, medical) => {
+    if (!trackable(a) || hits.has(a.hex) || !(emer || medical)) return;
+    hits.set(a.hex, { a, emer, type: emer ? "emergency" : "medical", callsign: (a.flight || "").trim() });
+  };
+  for (const r of squawks) if (r.status === "fulfilled") for (const a of r.value.ac || []) add(a, emergencyOf(a), false);
+  if (area.status === "fulfilled") for (const a of area.value.ac || []) add(a, emergencyOf(a), a.emergency === "lifeguard");
 
-  let added = 0;
-  for (const { a, emer } of hits) {
-    const type = emer ? "emergency" : "medical";
-    const day = new Date().toISOString().slice(0, 10);
-    const key = safeKey(`${day}/${type}/${clip(a.hex, 8)}-${clip(a.squawk, 4) || "none"}`);
-    if (await store.getMetadata(key)) continue; // already logged today (by the watcher or the app)
-    const callsign = (a.flight || "").trim();
-    const route = await routeFor(callsign);
-    const alt = a.alt_baro === "ground" ? 0 : (a.alt_baro ?? a.alt_geom ?? null);
-    await store.setJSON(key, {
-      type, time: new Date().toISOString(),
-      label: clip(emer || "MEDICAL", 40),
-      callsign: clip(callsign, 12),
-      reg: clip(a.r, 12),
-      hex: clip(a.hex, 8),
-      aircraft: clip(a.desc || a.t, 60),
-      squawk: clip(a.squawk, 4),
-      alt: num(alt),
-      speed_kt: num(a.gs),
-      track: num(a.track ?? a.true_heading),
-      lat: num(a.lat),
-      lon: num(a.lon),
-      from: clip(route && route[0], 8),
-      to: clip(route && route[1], 8),
-      via: "watcher",
-    });
-    added++;
-  }
-  console.log(`watcher: ${ac.length} aircraft within ${miles} mi, ${hits.length} emergency/medical, ${added} newly logged`);
+  const time = new Date().toISOString();
+  const day = time.slice(0, 10);
+  const tally = await readWeekTally(store);
+  // weekly cap reached: emergencies are not logged at all until the week resets
+  const items = [...hits.values()]
+    .filter((h) => h.type === "medical" || !tally.paused)
+    .map((h) => ({ ...h, key: safeKey(`${day}/${h.type}/${clip(h.a.hex, 8)}-${clip(h.a.squawk, 4) || "none"}`) }));
+
+  const existing = await Promise.all(items.map((h) => store.get(h.key, { type: "json" }).catch(() => null)));
+  const repeats = [], fresh = [];
+  items.forEach((h, i) => (existing[i] ? repeats.push([h, existing[i]]) : fresh.push(h)));
+
+  // seen again: count goes up
+  await Promise.all(repeats.map(([h, e]) => store.setJSON(h.key, { ...e, count: (e.count || 1) + 1, last: time })));
+
+  // first sighting today: new entry (emergencies only while the week has room)
+  const room = Math.max(0, tally.limit - tally.count);
+  const newEmer = fresh.filter((h) => h.type === "emergency").slice(0, room);
+  const toAdd = newEmer.concat(fresh.filter((h) => h.type === "medical"));
+  const routes = await Promise.all(toAdd.map((h, i) => (i < MAX_ROUTE_LOOKUPS ? routeFor(h.callsign) : null)));
+  await Promise.all(toAdd.map((h, i) => store.setJSON(h.key, buildEntry(h, routes[i], time))));
+  if (newEmer.length) await writeWeekTally(store, tally.start, tally.count + newEmer.length);
+
+  const nEmer = [...hits.values()].filter((h) => h.type === "emergency").length;
+  console.log(`watcher: ${nEmer} emergencies worldwide, ${hits.size - nEmer} medical near ${center.lat},${center.lon}; ` +
+    `${toAdd.length} new, ${repeats.length} counted again; week of ${tally.start}: ` +
+    `${tally.count + newEmer.length}/${tally.limit} emergencies${tally.paused ? " (cap reached, emergencies paused)" : ""}`);
 };

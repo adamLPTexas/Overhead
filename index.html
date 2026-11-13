@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Overhead">
-<meta name="version" content="2.9">
+<meta name="version" content="2.10">
 <meta name="theme-color" content="#07090b">
 <title>Overhead</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -119,6 +119,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 .log-item .what{min-width:0;overflow-wrap:anywhere}
 .log-item .what b{font-family:var(--led);font-weight:400;font-size:20px;color:var(--amber);margin-right:6px}
 .log-item .det{color:var(--muted);font-size:12px}
+.log-item .cnt{display:inline-block;font-size:11px;font-weight:600;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:0 7px;margin-left:8px;vertical-align:2px;font-variant-numeric:tabular-nums}
+.log-week{font-size:13px;color:var(--muted);margin:0 0 10px}
+.log-week b{color:var(--fg);font-variant-numeric:tabular-nums}
+.log-week.full b{color:var(--red)}
 .hint{font-size:12px;color:var(--muted);line-height:1.45;margin:-4px 2px 0}
 .foot{font-size:12px;color:var(--muted);line-height:1.5;padding:0 2px}
 .foot a{color:var(--cyan)}
@@ -1076,9 +1080,14 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       const r = await fetch(`${LOG_URL}?days=${$("logDays").value}`, { cache: "no-store" });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const want = $("logType").value;
-      const entries = ((await r.json()).entries || []).filter((e) => want === "all" || e.type === want);
-      if (!entries.length) { body.innerHTML = `<p class="note">Nothing logged for this period.</p>`; return; }
-      body.innerHTML = `<div class="log-list">${entries.map((e) => {
+      const data = await r.json();
+      const entries = (data.entries || []).filter((e) => want === "all" || e.type === want);
+      // this week's emergency tally (resets midnight Sunday, Central time); logging pauses at the limit
+      const w = data.week;
+      const weekHtml = w ? `<p class="log-week${w.paused ? " full" : ""}">Emergencies logged this week: <b>${w.count} / ${w.limit}</b>${w.paused
+        ? " · limit reached, emergency logging is paused until midnight Sunday (Central)" : " · resets midnight Sunday (Central)"}</p>` : "";
+      if (!entries.length) { body.innerHTML = weekHtml + `<p class="note">Nothing logged for this period.</p>`; return; }
+      body.innerHTML = weekHtml + `<div class="log-list">${entries.map((e) => {
         const when = new Date(e.time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
         if (e.type === "error") {
           return `<div class="log-item"><span class="when">${esc(when)}</span><span class="pill error">Error</span>
@@ -1090,7 +1099,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
           e.lat != null ? `${e.lat.toFixed(3)}, ${e.lon.toFixed(3)}` : null,
           e.via === "watcher" ? "seen by the 3-minute watcher" : null].filter(Boolean).map(esc).join(" · ");
         return `<div class="log-item"><span class="when">${esc(when)}</span><span class="pill ${e.type}">${e.type === "medical" ? "Medical" : "Emergency"}</span>
-          <span class="what"><b>${esc(e.callsign || e.reg || e.hex || "")}</b>${esc(e.label || "")}<br><span class="det">${det}</span></span></div>`;
+          <span class="what"><b>${esc(e.callsign || e.reg || e.hex || "")}</b>${esc(e.label || "")}${(e.count || 1) > 1
+            ? `<span class="cnt" title="Seen in ${e.count} checks${e.last ? ", last at " + esc(new Date(e.last).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : ""}">×${e.count}</span>` : ""}<br><span class="det">${det}</span></span></div>`;
       }).join("")}</div>`;
     } catch (err) {
       body.innerHTML = `<p class="note">Couldn't load the log (${esc(err.message)}). Check your connection and try again.</p>`;
