@@ -1,4 +1,4 @@
-// Shared by the log function (log.mjs) and the 3-minute watcher (watch.mjs), so both write
+// Shared by the log function (log.mjs) and the 5-minute watcher (watch.mjs), so both write
 // the same entries, the same keys and the same weekly emergency tally.
 //
 // Storage (Netlify Blobs, store "overhead-log"):
